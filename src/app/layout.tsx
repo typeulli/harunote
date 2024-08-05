@@ -1,8 +1,61 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css";
+
+import localFont from "next/font/local";
+import "@/styles/globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+// const pretendard = localFont({
+//   src:[
+    
+//     {
+//       path: "./fonts/NotoSansKR-Black.ttf",
+//       weight: "900",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-ExtraBold.ttf",
+//       weight: "800",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-Bold.ttf",
+//       weight: "700",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-SemiBold.ttf",
+//       weight: "600",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-Medium.ttf",
+//       weight: "500",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-Regular.ttf",
+//       weight: "400",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-Light.ttf",
+//       weight: "300",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-ExtraLight.ttf",
+//       weight: "200",
+//       style: "normal",
+//     },
+//     {
+//       path: "./fonts/NotoSansKR-Thin.ttf",
+//       weight: "100",
+//       style: "normal",
+//     },
+//   ]
+// });
 
 export const metadata: Metadata = {
   title: "Create Next App",

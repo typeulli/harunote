@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+/* 
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+} */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+.bluescroll::-webkit-scrollbar {
+    width: 10px;  /* 세로축 스크롤바 폭 너비 */
+    height: 20px;  /* 가로축 스크롤바 폭 너비 */
+}
+.bluescroll::-webkit-scrollbar-thumb {
+  background: #8bc5ff; /* 스크롤바 막대 색상 */
+  /* border: 2px solid #8bc5ff; 스크롤바 막대 테두리 설정  */
+  border-radius: 12px 12px 12px 12px;
+}
+.bluescroll::-webkit-scrollbar-thumb:hover {
+  background: #61affe;
+}
+
+.bluescroll::-webkit-scrollbar-thumb:active {
+  background: #2f93f7; /* 스크롤바 막대 색상 */;
+}
+.bluescroll::-webkit-scrollbar-track {
+  background: #eff7ff; /* 스크롤바 뒷 배경 색상 */
+}

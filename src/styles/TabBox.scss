@@ -1,0 +1,49 @@
+.TabMenuBar {
+    background: #61affe;
+}
+
+@mixin TabMenu {
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.TabMenuUnSelected {
+    background: #61affe;
+    color: #fff;
+
+    @include TabMenu;
+    
+    &:hover {
+        background: #8bc5ff;
+    }
+}
+
+.TabMenuSelected {
+    background: #f8f8f8;
+    color: #61affe;
+
+    @include TabMenu;
+}
+
+.TabMenuView {
+    background: #f8f8f8;
+    transition: height 0.2s;
+}
+
+// .ViewSol::-webkit-scrollbar-thumb {
+    //     background: #8bc5ff; /* 스크롤바 막대 색상 */
+    //     /* border: 2px solid #8bc5ff; 스크롤바 막대 테두리 설정  */
+    //     border-radius: 12px 12px 12px 12px;
+    // }
+    // .ViewSol::-webkit-scrollbar-thumb:hover {
+    //     background: #61affe;
+    // }
+    
+    // .ViewSol::-webkit-scrollbar-thumb:active {
+    //     background: #2f93f7; /* 스크롤바 막대 색상 */;
+    // }
+    // .ViewSol::-webkit-scrollbar-track {
+    // 	background: #eff7ff; /* 스크롤바 뒷 배경 색상 */
+    // }
