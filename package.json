@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@types/react-toggle": "^4.0.5",
     "autoprefixer": "^10.4.19",
     "next": "14.2.5",
     "postcss": "^8.4.40",
