@@ -10,7 +10,7 @@ export function TabBox({
         <div className='TabMenuBar'>
             {tabnames.map((name, index) => 
                 <button
-                    className={'TabMenu'+(select==index? 'Selected':'UnSelected')}
+                    className={'TabMenu'+(select==index? 'Selected':'UnSelected') + " select-none"}
                     key={`tabmenu-${index}`} 
                     onClick={() => {
                         if (select == index) onSelect(-1)
@@ -19,7 +19,7 @@ export function TabBox({
                 >{name}</button>
             )}
         </div>
-        <div className='TabMenuView' style={(0 <= select && select <= tabnames.length-1)? {height:50} : {height:0}}>
+        <div className='TabMenuView select-none' style={(0 <= select && select <= tabnames.length-1)? {height:50} : {height:0}}>
             {(0 <= select && select <= tabnames.length-1)? children[select]:<></>}
         </div>
     </div>
