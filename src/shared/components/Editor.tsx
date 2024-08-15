@@ -8,17 +8,24 @@ import "@/styles/Editor.css"
 
 import pen from "@/../public/assets/pen.png";
 import Image from "next/image";
+import ReactModal from "react-modal";
 
 enum BlockType {
-    Text, Separator, H1, H2, H3, H4
+    Text, Separator, H1, H2, H3, H4, Image
 }
 
 class BlockData {
     type: BlockType;
-    data: string;
+
+    text: string; /** For writable */
+    source: string; /** For media */
+    children: BlockData[]; /** For innerable */
     constructor(type: BlockType) {
         this.type = type;
-        this.data = "";
+
+        this.text = "";
+        this.source = "";
+        this.children = [];
     }
 }
 class FocusRange {
@@ -91,11 +98,15 @@ type FocusData = {
 type DrawingSegment = {
     x: number
     y: number
+}
+
+type DrawingPeice = {
+    segments: DrawingSegment[]
     color: string
 }
 
 class DrawingData {
-    items: DrawingSegment[][];
+    items: DrawingPeice[];
     color: string;
 
     constructor() {
@@ -106,13 +117,15 @@ class DrawingData {
 }
 class Document {
     id: string;
+    title: string;
     blocks: BlockData[];
     focus: FocusData;
     draw: DrawingData;
 
     spell: boolean;
-    constructor(id: string) {
+    constructor(id: string, title: string) {
         this.id = id;
+        this.title = title;
         this.blocks = [new BlockData(BlockType.Text)];
         this.focus = {index:0, selection:FocusRange.zero()};
         this.draw = new DrawingData();
@@ -132,27 +145,37 @@ interface BlockProps extends React.HTMLProps<HTMLDivElement> {
 
     fnAddBlock: (index: number) => void;
     fnSetFocus: (value: FocusData) => void;
+
+    setMediaSelectorMode: React.Dispatch<React.SetStateAction<"none" | "image" | "video">>
+    mediaSelectorCallback: React.MutableRefObject<((url: string) => void) | null>
 }
 
 const Block: React.FC<BlockProps> = ({
     docid, index, blockData, focusData,
     fnAddBlock, fnSetFocus,
+    setMediaSelectorMode, mediaSelectorCallback,
     ...props
 }) => {
     
     const _EnableMultiline: boolean = blockData.type == BlockType.Text
 
     
-    if (blockData.type == BlockType.Separator)
-        return <hr className="mt-[4px] mb-[3px] border-y-2" />
-        // return <div className="mt-[14px] mb-[15px] h-[10px] bg-slate-500"></div>
+
+    
 
 
 
 
 
 
+    var [text, setText] = useState("");
+    var [source, setSource] = useState<string | null>(null);
+    useEffect(() => {
+        setText(blockData.text)
+        setTimeout(fixHeight, 5)
 
+        blockData.source && setSource(blockData.source)
+    }, [index, blockData])
 
 
 
@@ -164,8 +187,8 @@ const Block: React.FC<BlockProps> = ({
         // textarea.style.height = 'auto';
         // let height = textarea.scrollHeight; // 높이
         // textarea.style.height = `${height}px`;
-        var textarea = window.document.getElementById(`Input-${docid}-${index}`) as HTMLTextAreaElement | null;
-        var block = window.document.getElementById(`Block-${docid}-${index}`) as HTMLDivElement | null;
+        var textarea = window.document.getElementById(`input-${docid}-${index}`) as HTMLTextAreaElement | null;
+        var block = window.document.getElementById(`block-${docid}-${index}`) as HTMLDivElement | null;
         if (textarea && block) {
             var height: string = '24px';
             if (blockData.type == BlockType.Text) {
@@ -175,16 +198,19 @@ const Block: React.FC<BlockProps> = ({
             }
             textarea.style.height = height;
             block.style.height = `${textarea.clientHeight}px`;
+        } else if (block) {
+            block.style.height = "";
         }
     }
     function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
         if (event.key == "Enter") {
             if (event.shiftKey) {
                 if (!_EnableMultiline) event.preventDefault();
+                setTimeout(fixHeight, 100)
                 return;
             } else { fnAddBlock(index+1); event.preventDefault(); return; }
         }
-        var textarea = window.document.getElementById(`Input-${docid}-${index}`) as HTMLTextAreaElement | null;
+        var textarea = window.document.getElementById(`input-${docid}-${index}`) as HTMLTextAreaElement | null;
         var source = textarea?.value;
         var selectionStart = textarea?.selectionStart ?? -1;
         var selectionEnd = textarea?.selectionEnd ?? -1;
@@ -239,51 +265,60 @@ const Block: React.FC<BlockProps> = ({
         if (source) 
             fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionEnd)});
     }
-    var [text, setText] = useState("");
     function executeText(text: string) {
-        blockData.data = text
-        setText(blockData.data)
+        blockData.text = text
+        setText(blockData.text)
         if (text == "/sep" || text == "---") {
             blockData.type = BlockType.Separator
-            blockData.data = "";
+            blockData.text = "";
             setText("");
             fnSetFocus({index:index+1, selection:FocusRange.zero()});
         } else if (text == "/h1" || text == "# ") {
             blockData.type = BlockType.H1
-            blockData.data = "";
+            blockData.text = "";
             setText("");
             fnSetFocus({index:index, selection:FocusRange.zero()});
-            setTimeout(fixHeight, 100)
+            fixHeight();
         } else if (text == "/h2" || text == "## ") {
             blockData.type = BlockType.H2
-            blockData.data = "";
+            blockData.text = "";
             setText("");
             fnSetFocus({index:index, selection:FocusRange.zero()});
-            setTimeout(fixHeight, 100)
+            fixHeight();
         } else if (text == "/h3" || text == "### ") {
             blockData.type = BlockType.H3
-            blockData.data = "";
+            blockData.text = "";
             setText("");
             fnSetFocus({index:index, selection:FocusRange.zero()});
-            setTimeout(fixHeight, 100)
+            fixHeight();
         } else if (text == "/h4" || text == "#### ") {
             blockData.type = BlockType.H4
-            blockData.data = "";
+            blockData.text = "";
             setText("");
             fnSetFocus({index:index, selection:FocusRange.zero()});
-            setTimeout(fixHeight, 100)
+            fixHeight();
+        } else if (text == "/image") {
+            blockData.type = BlockType.Image
+            blockData.text = "";
+            setText("");
+            setTimeout(fixHeight, 100);
+            setMediaSelectorMode("image");
+            mediaSelectorCallback.current = url => {
+                setSource(url);
+                fnSetFocus({index:index+1, selection:FocusRange.zero()});
+            }
         }
     }
-    useEffect(() => {
-        setText(blockData.data)
-        setTimeout(fixHeight, 5)
-    }, [index, blockData])
     var onChange: ChangeEventHandler<HTMLTextAreaElement> = useCallback(event => executeText(event.target.value), [index, blockData]);
-    return <div id={`Block-${docid}-${index}`} {...props} onKeyDown={onKeyDown}>
+    return <div id={`block-${docid}-${index}`} {...props} onKeyDown={onKeyDown}>
+        {
+        blockData.type == BlockType.Separator? <hr className="mt-[4px] mb-[3px] border-y-2" />
+        :blockData.type == BlockType.Image?<img src={source ?? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTbNX2nABlu-_8PGz9k2j6uexK1mucQgtGhhg&s"} className="select-none drag resize" draggable={false} />
+        :
         <textarea 
                 onMouseUp={onMouseUp}
 
-                id={`Input-${docid}-${index}`}
+                id={`input-${docid}-${index}`}
 
                 className={"bg-transparent placeholder:text-transparent focus:placeholder:text-gray-400 overflow-hidden resize-none outline-none"
                     + (blockData.type == BlockType.Text? " block h-[30px]" : "")
@@ -297,32 +332,36 @@ const Block: React.FC<BlockProps> = ({
 
                 value={text} onChange={onChange} placeholder={"Write down something surprising!"}
                 onInput={fixHeight}/>
+        }
     </div>
 }
 
 
-function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: string, drawingMode: boolean, drawingColor: string, drawingItems: MutableRefObject<DrawingSegment[][]>, onDrawEnd: () => void}) {
+function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: string, drawingMode: boolean, drawingColor: string, drawingItems: MutableRefObject<DrawingPeice[]>, onDrawEnd: () => void}) {
     var canvasRef: React.MutableRefObject<HTMLCanvasElement | null> = useRef(null);
     var [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
-    var [canvasWidth, setCanvasWidth] = useState(256);
-    var [canvasHeight, setCanvasHeight] = useState(256);
+
+    var canvasWidth = useRef(0);
+    var canvasHeight = useRef(0);
+
     var onDrawing = false;
 
     function refresh() {
-        ctx?.clearRect(0, 0, canvasWidth, canvasHeight);
+        const canvas = canvasRef.current;
+        var width  = canvas?.offsetWidth  ?? canvasWidth .current;
+        var height = canvas?.offsetHeight ?? canvasHeight.current;
+        canvasWidth .current = width;
+        canvasHeight.current = height;
+        
+        ctx?.clearRect(0, 0, width, height);
         drawingItems.current.forEach(
-            line => {
+            peice => {
                 ctx?.beginPath();
-                line.forEach(
-                    segment => {
-                        const x = segment.x * canvasWidth;
-                        const y = segment.y * canvasHeight;
-                        
-                        if (ctx) ctx.strokeStyle = segment.color
-                        ctx?.lineTo(x, y);
-                        ctx?.stroke();
-                    }
+                if (ctx) ctx.strokeStyle = peice.color
+                peice.segments.forEach(
+                    segment => ctx?.lineTo(segment.x * width, segment.y * width)
                 );
+                ctx?.stroke();
                 ctx?.closePath();
             }
         );
@@ -334,24 +373,26 @@ function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: s
         const canvas = canvasRef.current;
         const context = canvas?.getContext("2d");
         if (context)
-            context.imageSmoothingQuality = "high"
+            context.imageSmoothingQuality = "high";
             
         setCtx(context ?? null);
-        canvas?.clientWidth && setCanvasWidth(canvas.clientWidth);
-        canvas?.clientHeight && setCanvasHeight(canvas.clientHeight);
-
         refresh();
     }, []);
     useEffect(() => {onDrawing=false}, [drawingMode]);
 
 
-
+    setTimeout(refresh, 100);
     return <canvas 
         id={id}
         className={"absolute top-0 w-full h-full" + (drawingMode? "":" pointer-events-none")}
-        width={canvasWidth} height={canvasHeight}
+        width={canvasRef.current?.offsetWidth} height={canvasRef.current?.offsetHeight}
         ref={canvasRef}
-        onMouseDown={e => { onDrawing = true; ctx?.beginPath(); drawingItems.current.push([])}}
+        onMouseDown={e => { 
+            onDrawing = true; 
+            ctx?.beginPath();
+            drawingItems.current.push({segments:[], color:drawingColor});
+            if (ctx) ctx.strokeStyle = drawingColor;
+        }}
         onMouseUp={e => { onDrawing = false; ctx?.closePath(); onDrawEnd(); }}
         onMouseLeave={e => { onDrawing = false; ctx?.closePath(); onDrawEnd(); }}
         onMouseMove={e => {
@@ -359,13 +400,16 @@ function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: s
                 const canvas = canvasRef.current;
                 if (!canvas) return
     
-                const xrate = e.nativeEvent.offsetX / canvas.clientWidth;
-                const yrate = e.nativeEvent.offsetY / canvas.clientHeight;
 
-                drawingItems.current[drawingItems.current.length-1].push({x: xrate, y: yrate, color: drawingColor});
+                const offsetX = e.nativeEvent.offsetX;
+                const offsetY = e.nativeEvent.offsetY;
+
+                const clientWidth  = canvas.clientWidth;
+
+                drawingItems.current[drawingItems.current.length-1].segments.push({x: offsetX / clientWidth, y: offsetY / clientWidth});
+
                 
-                if (ctx) ctx.strokeStyle = drawingColor;
-                ctx?.lineTo(xrate * canvasWidth, yrate * canvasHeight);
+                ctx?.lineTo(offsetX, offsetY);
                 ctx?.stroke();
             }
         }}
@@ -373,7 +417,12 @@ function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: s
 }
 
 export default function Editor({className, style}: {className?: string | undefined, style?: CSSProperties | undefined}) {
-    var documentData = new Document("haru");
+    var documentData = new Document("testdoc", "haru");
+
+    // Modal Area
+    var [mediaSelectorMode, setMediaSelectorMode] = useState<"none" | "image" | "video">("none");
+    var mediaSelectorCallback = useRef<((url: string) => void) | null>(null);
+    var [mediaSelectorUrl, setMediaSelectorUrl] = useState<string>("");
 
     // Tool Area
     var [toolNumber, setToolNumber] = useState(-1);
@@ -394,9 +443,12 @@ export default function Editor({className, style}: {className?: string | undefin
     var [docmuentSpell, setDocumentSpell] = useState(documentData.spell);
     useEffect(() => { documentData.spell = docmuentSpell }, [docmuentSpell]);
 
+
+
+    var [targettingBlock, setTargettingBlock] = useState(-1);
     var [draggingBlock, setDraggingBlock] = useState(-1);
+    var [draggingStick, setDraggingStick] = useState(-1);
     var [isDraggingBlock, setIsDraggingBlock] = useState(false);
-    var [virtualBlockPosition, setVirtualBlockPosition] = useState([0, 0]);
 
 
 
@@ -406,22 +458,53 @@ export default function Editor({className, style}: {className?: string | undefin
         setDocumentFocus({index: index, selection:docmuentFocus.selection});
     }
 
+    function focus() {
+        var element = document.getElementById(`input-${documentData.id}-${docmuentFocus.index}`) as HTMLTextAreaElement;
+        if (element) {
+            var selection = docmuentFocus.selection.toRawCol(element.value);
+            element.setSelectionRange(selection.start, selection.end);
+            element.focus();
+        }
+        else setTimeout(focus, 5);
+    }
     useEffect(
-        () => {
-            function focus() {
-                var element = document.getElementById(`Input-${documentData.id}-${docmuentFocus.index}`) as HTMLTextAreaElement;
-                if (element) {
-                    var selection = docmuentFocus.selection.toRawCol(element.value);
-                    element.setSelectionRange(selection.start, selection.end);
-                    element.focus();
-                }
-                else setTimeout(focus, 5);
-            }
-            focus()
-        }, [docmuentFocus]
+        focus, [docmuentFocus]
     );
 
     return <div className={"flex flex-col overflow-hidden " + className} style={style}>
+
+        <ReactModal isOpen={mediaSelectorMode != "none"} onRequestClose={() => setMediaSelectorMode("none")}>
+            <div className={"flex flex-col h-full w-full items-center"}>
+                <div className="w-[75%] border-4 border-sky-500 border-dashed rounded-3xl flex justify-center py-6 cursor-pointer"
+                     onClick={e => document.getElementById(`input-mediaselector-${documentData.id}`)?.click()}>
+                    <p className="select-none">
+                        <span className="text-2xl block">Drop {mediaSelectorMode} file</span>
+                        <button className="text-gray-500 block">Or click here to choose</button>
+                    </p>
+                    <input id={`input-mediaselector-${documentData.id}`} className="hidden" type="file"/>
+                </div>
+                <div className="flex w-full my-6">
+                    <div className="grow flex items-center"><hr className="grow border-y-2 border-dashed"/></div>
+                    <span className="text-slate-400">OR</span>
+                    <div className="grow flex items-center"><hr className="grow border-y-2 border-dashed"/></div>
+                </div>
+                <div>
+                    Input url for {mediaSelectorMode}
+                    <input className="border-2" value={mediaSelectorUrl} onChange={e => setMediaSelectorUrl(e.target.value)}/>
+                </div>
+                
+                <div className="grow overflow-hidden">
+                    <img src={mediaSelectorUrl} alt="Image Preview"></img>
+                </div>
+
+                <button className="w-full bg-sky-100 py-2" onClick={() => {
+                    mediaSelectorCallback.current && mediaSelectorCallback.current(mediaSelectorUrl);
+                    mediaSelectorCallback.current = () => {};
+                    setMediaSelectorMode("none");
+                }}>Done!</button>
+            </div>
+        </ReactModal>
+
         <TabBox select={toolNumber} onSelect={setToolNumber} tabnames={["File", "Edit", "View"]}>
             <div>FileMenu</div>
             <div className="flex flex-row">
@@ -441,53 +524,69 @@ export default function Editor({className, style}: {className?: string | undefin
         </TabBox>
         
         <div className="flex flex-col flex-auto items-center overflow-y-auto overflow-x-hidden h-full bg-slate-100 bluescroll"
-
             // For dragdrop system
             style={isDraggingBlock ? { cursor:"pointer" } : {}}
             onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
             onMouseMove={event => {
                 var docview = document.getElementById("documentview-"+documentData.id);
-                if (docview == null) return;
-                var rect = docview.getClientRects()[0];
-                setVirtualBlockPosition([event.clientX - rect.x + 8, event.clientY - rect.y]); // Plus 8 cause mr-2
+                var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                if (docview == null || draggingBlock == null) return;
+                draggingBlock.style.left = `${event.clientX + 8}px`;
+                draggingBlock.style.top = event.clientY + "px"; // Plus 8 cause mr-2
+                
+                var blocks = Array.from(docview.getElementsByTagName("div")).filter(element => element.id.startsWith(`block-${documentData.id}`))
+                // console.log(blocks)
+                // TODO
             }}
         >
             <div id={"documentview-"+documentData.id} className="Editor relative flex flex-col bg-white grow" style={{width:"70%"}}>
-                <div  id={"draggingblock-"+documentData.id}
-                    className={"absolute text-gray-400"+(isDraggingBlock?"":" hidden")}
-                    style={{left:virtualBlockPosition[0], top:virtualBlockPosition[1]}}
+                <div id={"draggingblock-"+documentData.id}
+                    className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
+                    style={{left:0, top:0}}
                 />
-                <Canvas id={"canvas-"+documentData.id} drawingMode={drawingMode} drawingColor={drawingColor} drawingItems={drawingItems} onDrawEnd={() => documentData.draw.items=drawingItems.current }/>
+                <Canvas id={"canvas-"+documentData.id} drawingMode={drawingMode} drawingColor={drawingColor} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/>
+                    
+                {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
                 {docmuentBlocks.map((block, index) => (
-                                <div key={"blockholder-"+documentData.id+"-"+index}>
-                                    <div className="absolute right-full float-left mr-2 flex items-start">
-                                        <button className="font-bold text-gray-500 select-none"
-                                                onMouseDown={() => {
-                                                    var draggingBlock = document.getElementById("draggingblock-"+documentData.id)
-                                                    console.log(document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "");
-                                                    if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
-                                                    setDraggingBlock(index)
-                                                }}
-                                                onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
-                                        >::</button>
-                                        <button className="font-bold text-gray-500 select-none">+</button>
+                                    <div key={"blockholder-"+documentData.id+"-"+index}>
+                                        <div key={"blocksidetool-"+documentData.id+"-"+index} className={"absolute right-full float-left flex items-start"+(!isDraggingBlock && (targettingBlock==index || targettingBlock==index+0.5)?"":" hidden")}
+                                            onMouseEnter={() => setTargettingBlock(index+0.5)}
+                                            onMouseLeave={() => (targettingBlock==index+0.5) && setTargettingBlock(-1)}>
+                                            <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                    onClick={() => {
+                                                        setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
+                                                        setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero()});
+                                                    }}
+                                            >+</button>
+                                            <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                    onMouseDown={() => {
+                                                        var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                                                        if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
+                                                        setDraggingBlock(index);
+                                                    }}
+                                                    onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
+                                            >::</button>
+                                        </div>
+                                        <Block
+                                            key={"block-"+documentData.id+"-"+index}
+
+                                            className={"m-0 bg-transparent"+(drawingMode?" select-none":"")}
+                                            spellCheck={docmuentSpell}
+
+                                            onMouseEnter={() => setTargettingBlock(index)}
+                                            onMouseLeave={() => targettingBlock==index && setTargettingBlock(-1)}
+
+                                            docid={documentData.id}
+                                            index={index}
+                                            blockData={block}
+                                            focusData={docmuentFocus}
+                                            fnAddBlock={fnAddBlock}
+                                            fnSetFocus={setDocumentFocus}
+
+                                            setMediaSelectorMode={setMediaSelectorMode}
+                                            mediaSelectorCallback={mediaSelectorCallback}
+                                        />
                                     </div>
-                                    <Block
-                                        key={"block-"+documentData.id+"-"+index}
-
-                                        id={"block-"+documentData.id+"-"+index}
-                                        className={"m-0 grow-0 bg-transparen"+(drawingMode?" select-none":"")}
-                                        spellCheck={docmuentSpell}
-
-                                        docid={documentData.id}
-                                        index={index}
-                                        blockData={block}
-                                        focusData={docmuentFocus}
-                                        fnAddBlock={fnAddBlock}
-                                        fnSetFocus={setDocumentFocus}
-                                        
-                                    />
-                                </div>
                             ))}
             </div>
         </div>
