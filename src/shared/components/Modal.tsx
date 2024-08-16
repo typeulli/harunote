@@ -1,12 +1,12 @@
 interface ModalProps extends React.HTMLProps<HTMLDivElement> {
-    isOpen: boolean, onClose: () => void
+    isOpen: boolean,
+    onRequestClose: () => void
 }
 
 const Modal: React.FC<ModalProps> = ({
-    isOpen, onClose, children, ...props
+    isOpen, onRequestClose, children, ...props
 }) => {
-    return <div
-    {...props}
+    return <div {...props}
     style={{
         display: isOpen ? 'block' : 'none',
         ...props.style,
@@ -21,7 +21,10 @@ const Modal: React.FC<ModalProps> = ({
         zIndex: 1000, // ensure modal is on top
     }}
     className={`modal ${props.className}`}
-    onKeyDown={e => e.key=="esc" && onClose()}
+    onKeyDown={e => {
+        e.key=="esc" && onRequestClose();
+        props.onKeyDown && props.onKeyDown(e);
+    }}
 >
     <div
         className="modal-content"

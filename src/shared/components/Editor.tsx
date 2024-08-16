@@ -8,7 +8,9 @@ import "@/styles/Editor.css"
 
 import pen from "@/../public/assets/pen.png";
 import Image from "next/image";
+import Modal from "@/shared/components/Modal"
 import ReactModal from "react-modal";
+import { DropEvent, FileRejection, useDropzone } from "react-dropzone";
 
 enum BlockType {
     Text, Separator, H1, H2, H3, H4, Image
@@ -107,11 +109,15 @@ type DrawingPeice = {
 
 class DrawingData {
     items: DrawingPeice[];
-    color: string;
+    color1: string;
+    color2: string;
+    color3: string;
 
     constructor() {
         this.items = [];
-        this.color = "#000000";
+        this.color1 = "#000000";
+        this.color2 = "#ff0000";
+        this.color3 = "#0000ff";
     }
     
 }
@@ -123,6 +129,7 @@ class Document {
     draw: DrawingData;
 
     spell: boolean;
+    grid: boolean;
     constructor(id: string, title: string) {
         this.id = id;
         this.title = title;
@@ -131,6 +138,7 @@ class Document {
         this.draw = new DrawingData();
 
         this.spell = true;
+        this.grid = true;
     }
     insertBlock = (block: BlockData, index: number) => {
         this.blocks = [...this.blocks.slice(0, index), block, ...this.blocks.slice(index, this.blocks.length)];
@@ -423,14 +431,24 @@ export default function Editor({className, style}: {className?: string | undefin
     var [mediaSelectorMode, setMediaSelectorMode] = useState<"none" | "image" | "video">("none");
     var mediaSelectorCallback = useRef<((url: string) => void) | null>(null);
     var [mediaSelectorUrl, setMediaSelectorUrl] = useState<string>("");
+    
+    const onDrop = useCallback((acceptedFiles: File[] ) => {
+        // Do something with the files
+            console.log(acceptedFiles)
+    }, [])
+    const mediaSelectorDropzone = useDropzone({ maxFiles: 1, onDrop: onDrop, noKeyboard: true })
 
     // Tool Area
     var [toolNumber, setToolNumber] = useState(-1);
 
-    var [drawingMode, setDrawingMode] = useState(false);
-    useEffect(() => setDrawingMode(IsUserMobile()), []);
-    var [drawingColor, setDrawingColor] = useState(documentData.draw.color);
-    useEffect(() => { documentData.draw.color=drawingColor }, [drawingColor]);
+    var [drawingMode, setDrawingMode] = useState(0);
+
+    var [drawingColor1, setDrawingColor1] = useState(documentData.draw.color1);
+    var [drawingColor2, setDrawingColor2] = useState(documentData.draw.color2);
+    var [drawingColor3, setDrawingColor3] = useState(documentData.draw.color3);
+    useEffect(() => { documentData.draw.color1=drawingColor1 }, [drawingColor1]);
+    useEffect(() => { documentData.draw.color2=drawingColor2 }, [drawingColor2]);
+    useEffect(() => { documentData.draw.color3=drawingColor3 }, [drawingColor3]);
     var drawingItems = useRef(documentData.draw.items);
     // Tool Area
 
@@ -442,6 +460,8 @@ export default function Editor({className, style}: {className?: string | undefin
     useEffect(() => { documentData.focus = docmuentFocus }, [docmuentFocus]);
     var [docmuentSpell, setDocumentSpell] = useState(documentData.spell);
     useEffect(() => { documentData.spell = docmuentSpell }, [docmuentSpell]);
+    var [docmuentGrid, setDocumentGrid] = useState(documentData.grid);
+    useEffect(() => { documentData.grid = docmuentGrid }, [docmuentGrid]);
 
 
 
@@ -474,14 +494,22 @@ export default function Editor({className, style}: {className?: string | undefin
     return <div className={"flex flex-col overflow-hidden " + className} style={style}>
 
         <ReactModal isOpen={mediaSelectorMode != "none"} onRequestClose={() => setMediaSelectorMode("none")}>
-            <div className={"flex flex-col h-full w-full items-center"}>
-                <div className="w-[75%] border-4 border-sky-500 border-dashed rounded-3xl flex justify-center py-6 cursor-pointer"
-                     onClick={e => document.getElementById(`input-mediaselector-${documentData.id}`)?.click()}>
+            <div className={"flex flex-col h-full w-[full] items-center"}>
+                <div className="w-[50%] 
+                                border-4 border-sky-500 border-dashed rounded-3xl
+                                flex justify-center
+                                cursor-pointer
+                                py-6 m-5
+                                transition-all
+                                "
+                     style={mediaSelectorDropzone.isDragActive? {scale:"120%"} : {}}
+                     {...mediaSelectorDropzone.getRootProps()}
+                >
                     <p className="select-none">
                         <span className="text-2xl block">Drop {mediaSelectorMode} file</span>
                         <button className="text-gray-500 block">Or click here to choose</button>
                     </p>
-                    <input id={`input-mediaselector-${documentData.id}`} className="hidden" type="file"/>
+                    <input id={`input-mediaselector-${documentData.id}`} className="hidden" type="file" {...mediaSelectorDropzone.getInputProps()}/>
                 </div>
                 <div className="flex w-full my-6">
                     <div className="grow flex items-center"><hr className="grow border-y-2 border-dashed"/></div>
@@ -508,17 +536,29 @@ export default function Editor({className, style}: {className?: string | undefin
         <TabBox select={toolNumber} onSelect={setToolNumber} tabnames={["File", "Edit", "View"]}>
             <div>FileMenu</div>
             <div className="flex flex-row">
-                EditMenu
-                <input type="checkbox" checked={drawingMode} onChange={e => setDrawingMode(!drawingMode)} />
-                <div className="flex flex-col cursor-pointer" onClick={() => Array.from(document.getElementsByTagName("input")).filter(e => e.id==`input-pencolor-${documentData.id}`).pop()?.click()}>
-                    <Image className="h-8 w-8" src={pen} alt=""/>
-                    <input id={`input-pencolor-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor} onChange={e => setDrawingColor(e.target.value)} />
+                <div className="flex flex-row">
+                    <div className="flex flex-col cursor-pointer items-center">
+                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==1 ? 0 : 1)}/>
+                        <input id={`input-pencolor1-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor1} onChange={e => setDrawingColor1(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col cursor-pointer items-center">
+                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==2?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==2 ? 0 : 2)}/>
+                        <input id={`input-pencolor2-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor2} onChange={e => setDrawingColor2(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col cursor-pointer items-center">
+                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==3?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==3 ? 0 : 3)}/>
+                        <input id={`input-pencolor3-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor3} onChange={e => setDrawingColor3(e.target.value)} />
+                    </div>
                 </div>
             </div>
-            <div>
-                <div className="float-left">
-                    <input id={`input-docspell-${documentData.id}`} className="" type="checkbox" checked={docmuentSpell} onChange={e => setDocumentSpell(!docmuentSpell)} />
-                    <span>Check Spell</span>
+            <div className="flex flex-col">
+                <div>
+                    <input id={`input-docspell-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentSpell} onChange={() => setDocumentSpell(!docmuentSpell)} />
+                    <label htmlFor={`input-docspell-${documentData.id}`} className="cursor-pointer">Check Spell</label>
+                </div>
+                <div>
+                    <input id={`input-docgrid-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentGrid} onChange={() => setDocumentGrid(!docmuentGrid)} />
+                    <label htmlFor={`input-docgrid-${documentData.id}`} className="cursor-pointer">Use Grid</label>
                 </div>
             </div>
         </TabBox>
@@ -539,12 +579,12 @@ export default function Editor({className, style}: {className?: string | undefin
                 // TODO
             }}
         >
-            <div id={"documentview-"+documentData.id} className="Editor relative flex flex-col bg-white grow" style={{width:"70%"}}>
+            <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
                 <div id={"draggingblock-"+documentData.id}
                     className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
                     style={{left:0, top:0}}
                 />
-                <Canvas id={"canvas-"+documentData.id} drawingMode={drawingMode} drawingColor={drawingColor} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/>
+                <Canvas id={"canvas-"+documentData.id} drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/>
                     
                 {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
                 {docmuentBlocks.map((block, index) => (
@@ -591,7 +631,5 @@ export default function Editor({className, style}: {className?: string | undefin
             </div>
         </div>
         <button onClick={() => console.log(documentData)}>Print</button>
-        <button onClick={() => setDrawingColor("#ff0000")}>Canvas Color To Red</button>
-        <button onClick={() => setDrawingColor("#000000")}>Canvas Color To Black</button>
     </div>
 }
