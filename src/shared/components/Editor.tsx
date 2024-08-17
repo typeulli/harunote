@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ChangeEventHandler, CSSProperties, MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
+import React, { ChangeEventHandler, Component, CSSProperties, MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
 import { TabBox } from "./TabBox";  
 import { IsUserMobile } from "@/utils/ClientStatus"
 
@@ -344,29 +344,57 @@ const Block: React.FC<BlockProps> = ({
     </div>
 }
 
+type DrawingPiece = {
+    segments: { x: number, y: number }[],
+    color: string
+}
 
-function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: string, drawingMode: boolean, drawingColor: string, drawingItems: MutableRefObject<DrawingPeice[]>, onDrawEnd: () => void}) {
-    var canvasRef: React.MutableRefObject<HTMLCanvasElement | null> = useRef(null);
-    var [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
+type CanvasProps = {
+    id: string,
+    drawingMode: boolean,
+    drawingColor: string,
+    drawingItems: MutableRefObject<DrawingPiece[]>,
+    onDrawEnd: () => void
+}
 
-    var canvasWidth = useRef(0);
-    var canvasHeight = useRef(0);
+type CanvasState = {
+    ctx: CanvasRenderingContext2D | null
+}
 
-    var onDrawing = false;
+class Canvas extends Component<CanvasProps, CanvasState> {
+    canvasRef: React.RefObject<HTMLCanvasElement>;
+    canvasWidth: number;
+    canvasHeight: number;
+    onDrawing: boolean;
 
-    function refresh() {
-        const canvas = canvasRef.current;
-        var width  = canvas?.offsetWidth  ?? canvasWidth .current;
-        var height = canvas?.offsetHeight ?? canvasHeight.current;
-        canvasWidth .current = width;
-        canvasHeight.current = height;
-        
+    constructor(props: CanvasProps) {
+        super(props);
+        this.canvasRef = React.createRef<HTMLCanvasElement>();
+        this.canvasWidth = 0;
+        this.canvasHeight = 0;
+        this.onDrawing = false;
+
+        this.state = {
+            ctx: null
+        };
+    }
+
+    refresh = () => {
+        const canvas = this.canvasRef.current;
+        const width = canvas?.offsetWidth ?? this.canvasWidth;
+        const height = canvas?.offsetHeight ?? this.canvasHeight;
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+
+        const { ctx } = this.state;
+        const { drawingItems, drawingColor } = this.props;
+
         ctx?.clearRect(0, 0, width, height);
         drawingItems.current.forEach(
-            peice => {
+            piece => {
                 ctx?.beginPath();
-                if (ctx) ctx.strokeStyle = peice.color
-                peice.segments.forEach(
+                if (ctx) ctx.strokeStyle = piece.color;
+                piece.segments.forEach(
                     segment => ctx?.lineTo(segment.x * width, segment.y * width)
                 );
                 ctx?.stroke();
@@ -375,53 +403,136 @@ function Canvas({id, drawingMode, drawingColor, drawingItems, onDrawEnd}: {id: s
         );
         if (ctx) ctx.strokeStyle = drawingColor;
     }
-    useEffect(refresh, [drawingColor, drawingItems])
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
+    handleMouseDown = () => {
+        this.onDrawing = true;
+        const { ctx } = this.state;
+        const { drawingItems, drawingColor } = this.props;
+
+        ctx?.beginPath();
+        drawingItems.current.push({ segments: [], color: drawingColor });
+        if (ctx) ctx.strokeStyle = drawingColor;
+    }
+
+    handleMouseUpOrLeave = () => {
+        this.onDrawing = false;
+        this.state.ctx?.closePath();
+        this.props.onDrawEnd();
+    }
+
+    handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (this.onDrawing) {
+            const canvas = this.canvasRef.current;
+            if (!canvas) return;
+
+            const offsetX = e.nativeEvent.offsetX;
+            const offsetY = e.nativeEvent.offsetY;
+
+            const clientWidth = canvas.clientWidth;
+
+            this.props.drawingItems.current[this.props.drawingItems.current.length - 1].segments.push({ x: offsetX / clientWidth, y: offsetY / clientWidth });
+
+            this.state.ctx?.lineTo(offsetX, offsetY);
+            this.state.ctx?.stroke();
+        }
+    }
+
+    handleTouchStart = () => {
+        this.onDrawing = true;
+        const { ctx } = this.state;
+        const { drawingItems, drawingColor } = this.props;
+
+        ctx?.beginPath();
+        drawingItems.current.push({ segments: [], color: drawingColor });
+        if (ctx) ctx.strokeStyle = drawingColor;
+    }
+
+    handleTouchEnd = () => {
+        this.onDrawing = false;
+        this.state.ctx?.closePath();
+        this.props.onDrawEnd();
+    }
+
+    handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        if (this.onDrawing) {
+            const canvas = this.canvasRef.current;
+            if (!canvas) return;
+
+            const touch = e.nativeEvent.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const offsetX = touch.clientX - rect.left;
+            const offsetY = touch.clientY - rect.top;
+
+            const clientWidth = canvas.clientWidth;
+
+            this.props.drawingItems.current[this.props.drawingItems.current.length - 1].segments.push({ x: offsetX / clientWidth, y: offsetY / clientWidth });
+
+            this.state.ctx?.lineTo(offsetX, offsetY);
+            this.state.ctx?.stroke();
+        }
+    }
+
+    handleNativeTouchMove = (e: TouchEvent) => {
+        // Prevent the default behavior
+        e.preventDefault();
+
+        // Create a React-like synthetic event
+        const syntheticEvent = {
+            ...e,
+            nativeEvent: e,
+            currentTarget: e.currentTarget as EventTarget & HTMLCanvasElement,
+            target: e.target as EventTarget & HTMLCanvasElement,
+            // You can add any other properties you need here
+        } as unknown as React.TouchEvent<HTMLCanvasElement>;
+
+        // Call the actual handler
+        this.handleTouchMove(syntheticEvent);
+    }
+
+
+    componentDidMount() {
+        const canvas = this.canvasRef.current;
         const context = canvas?.getContext("2d");
-        if (context)
-            context.imageSmoothingQuality = "high";
-            
-        setCtx(context ?? null);
-        refresh();
-    }, []);
-    useEffect(() => {onDrawing=false}, [drawingMode]);
+        if (context) context.imageSmoothingQuality = "high";
+        this.setState({ ctx: context ?? null }, this.refresh);
 
+        
+        this.canvasRef.current?.addEventListener('touchmove', this.handleNativeTouchMove, { passive: false });
+    }
 
-    setTimeout(refresh, 100);
-    return <canvas 
-        id={id}
-        className={"absolute top-0 w-full h-full" + (drawingMode? "":" pointer-events-none")}
-        width={canvasRef.current?.offsetWidth} height={canvasRef.current?.offsetHeight}
-        ref={canvasRef}
-        onMouseDown={e => { 
-            onDrawing = true; 
-            ctx?.beginPath();
-            drawingItems.current.push({segments:[], color:drawingColor});
-            if (ctx) ctx.strokeStyle = drawingColor;
-        }}
-        onMouseUp={e => { onDrawing = false; ctx?.closePath(); onDrawEnd(); }}
-        onMouseLeave={e => { onDrawing = false; ctx?.closePath(); onDrawEnd(); }}
-        onMouseMove={e => {
-            if (onDrawing) {
-                const canvas = canvasRef.current;
-                if (!canvas) return
+    componentDidUpdate(prevProps: CanvasProps) {
+        if (prevProps.drawingColor !== this.props.drawingColor ||
+            prevProps.drawingItems !== this.props.drawingItems) {
+            this.refresh();
+        }
+        if (prevProps.drawingMode !== this.props.drawingMode) {
+            this.onDrawing = false;
+        }
+    }
+
+    componentWillUnmount() {
+        this.canvasRef.current?.removeEventListener('touchmove', this.handleNativeTouchMove);
+    }
     
-
-                const offsetX = e.nativeEvent.offsetX;
-                const offsetY = e.nativeEvent.offsetY;
-
-                const clientWidth  = canvas.clientWidth;
-
-                drawingItems.current[drawingItems.current.length-1].segments.push({x: offsetX / clientWidth, y: offsetY / clientWidth});
-
-                
-                ctx?.lineTo(offsetX, offsetY);
-                ctx?.stroke();
-            }
-        }}
-    />
+    render() {
+        const { id, drawingMode } = this.props;
+        return (
+            <canvas
+                id={id}
+                className={"absolute top-0 w-full h-full" + (drawingMode ? "" : " pointer-events-none")}
+                width={this.canvasRef.current?.offsetWidth}
+                height={this.canvasRef.current?.offsetHeight}
+                ref={this.canvasRef}
+                onMouseDown={this.handleMouseDown}
+                onMouseUp={this.handleMouseUpOrLeave}
+                onMouseLeave={this.handleMouseUpOrLeave}
+                onMouseMove={this.handleMouseMove}
+                onTouchStart={this.handleTouchStart}
+                onTouchEnd={this.handleTouchEnd}
+                onTouchMove={this.handleTouchMove}
+            />
+        );
+    }
 }
 
 export default function Editor({className, style}: {className?: string | undefined, style?: CSSProperties | undefined}) {
