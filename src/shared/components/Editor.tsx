@@ -1,16 +1,14 @@
 "use client";
 
 import React, { ChangeEventHandler, Component, CSSProperties, MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
-import { TabBox } from "./TabBox";  
-import { IsUserMobile } from "@/utils/ClientStatus"
 
 import "@/styles/Editor.css"
 
 import pen from "@/../public/assets/pen.png";
 import Image from "next/image";
-import Modal from "@/shared/components/Modal"
-import ReactModal from "react-modal";
-import { DropEvent, FileRejection, useDropzone } from "react-dropzone";
+import edit from "@/../public/assets/edit.png"
+import { useDropzone } from "react-dropzone";
+import { HandwritingRecognize, HandwritingRecognizeOptions } from "@/utils/handwriting";
 
 enum BlockType {
     Text, Separator, H1, H2, H3, H4, Image
@@ -246,7 +244,7 @@ const Block: React.FC<BlockProps> = ({
         if (source && selectionStart != -1 && selectionEnd != -1 && event.key.startsWith("Arrow")) {
             var current = FocusRange.fromSource(source, selectionStart, selectionEnd);
             if (event.key == "ArrowLeft") current = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
-            if (event.key == "ArrowRight") current = FocusRange.fromSource(source, Math.min(selectionStart+1, source.length-1), Math.min(selectionStart+1, source.length-1));
+            if (event.key == "ArrowRight") current = FocusRange.fromSource(source, Math.min(selectionStart+1, source.length), Math.min(selectionStart+1, source.length));
             if (event.key == "ArrowUp") {
                 current = FocusRange.fromSource(source, selectionStart, selectionStart);
                 current.startLine = Math.max(current.startLine - 1, 0);
@@ -351,10 +349,14 @@ type DrawingPiece = {
 
 type CanvasProps = {
     id: string,
+    className: string,
     drawingMode: boolean,
     drawingColor: string,
     drawingItems: MutableRefObject<DrawingPiece[]>,
-    onDrawEnd: () => void
+    onDrawStart?: () => void,
+    onDrawEnd?: () => void
+
+    children?: React.ReactNode // Add this line to include children
 }
 
 type CanvasState = {
@@ -381,10 +383,14 @@ class Canvas extends Component<CanvasProps, CanvasState> {
 
     refresh = () => {
         const canvas = this.canvasRef.current;
-        const width = canvas?.offsetWidth ?? this.canvasWidth;
-        const height = canvas?.offsetHeight ?? this.canvasHeight;
+        const width = canvas?.clientWidth ?? this.canvasWidth;
+        const height = canvas?.clientHeight ?? this.canvasHeight;
         this.canvasWidth = width;
         this.canvasHeight = height;
+        if(canvas) {
+            canvas.width = width;
+            canvas.height = height;
+        }
 
         const { ctx } = this.state;
         const { drawingItems, drawingColor } = this.props;
@@ -404,7 +410,7 @@ class Canvas extends Component<CanvasProps, CanvasState> {
         if (ctx) ctx.strokeStyle = drawingColor;
     }
 
-    handleMouseDown = () => {
+    onDrawStart = () => {
         this.onDrawing = true;
         const { ctx } = this.state;
         const { drawingItems, drawingColor } = this.props;
@@ -412,12 +418,23 @@ class Canvas extends Component<CanvasProps, CanvasState> {
         ctx?.beginPath();
         drawingItems.current.push({ segments: [], color: drawingColor });
         if (ctx) ctx.strokeStyle = drawingColor;
+        this.props.onDrawStart && this.props.onDrawStart();
+    }
+
+    onDrawEnd = () => {
+        this.onDrawing = false;
+        this.state.ctx?.closePath();
+        this.props.onDrawEnd && this.props.onDrawEnd();
+
+        this.refresh();
+    }
+
+    handleMouseDown = () => {
+        this.onDrawStart();
     }
 
     handleMouseUpOrLeave = () => {
-        this.onDrawing = false;
-        this.state.ctx?.closePath();
-        this.props.onDrawEnd();
+        this.onDrawEnd();
     }
 
     handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -434,23 +451,17 @@ class Canvas extends Component<CanvasProps, CanvasState> {
 
             this.state.ctx?.lineTo(offsetX, offsetY);
             this.state.ctx?.stroke();
+
+            e.preventDefault();
         }
     }
 
     handleTouchStart = () => {
-        this.onDrawing = true;
-        const { ctx } = this.state;
-        const { drawingItems, drawingColor } = this.props;
-
-        ctx?.beginPath();
-        drawingItems.current.push({ segments: [], color: drawingColor });
-        if (ctx) ctx.strokeStyle = drawingColor;
+        this.onDrawStart();
     }
 
     handleTouchEnd = () => {
-        this.onDrawing = false;
-        this.state.ctx?.closePath();
-        this.props.onDrawEnd();
+        this.onDrawEnd();
     }
 
     handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
@@ -495,8 +506,8 @@ class Canvas extends Component<CanvasProps, CanvasState> {
         const context = canvas?.getContext("2d");
         if (context) context.imageSmoothingQuality = "high";
         this.setState({ ctx: context ?? null }, this.refresh);
-
         
+        window.addEventListener('resize', this.refresh)
         this.canvasRef.current?.addEventListener('touchmove', this.handleNativeTouchMove, { passive: false });
     }
 
@@ -511,6 +522,7 @@ class Canvas extends Component<CanvasProps, CanvasState> {
     }
 
     componentWillUnmount() {
+        window.removeEventListener('resize', this.refresh)
         this.canvasRef.current?.removeEventListener('touchmove', this.handleNativeTouchMove);
     }
     
@@ -519,18 +531,18 @@ class Canvas extends Component<CanvasProps, CanvasState> {
         return (
             <canvas
                 id={id}
-                className={"absolute top-0 w-full h-full" + (drawingMode ? "" : " pointer-events-none")}
-                width={this.canvasRef.current?.offsetWidth}
-                height={this.canvasRef.current?.offsetHeight}
+                className={this.props.className + (drawingMode ? "" : " pointer-events-none")}
+                width={this.canvasRef.current?.clientWidth}
+                height={this.canvasRef.current?.clientHeight}
                 ref={this.canvasRef}
                 onMouseDown={this.handleMouseDown}
                 onMouseUp={this.handleMouseUpOrLeave}
-                onMouseLeave={this.handleMouseUpOrLeave}
+                onMouseLeave={() => this.onDrawing && this.handleMouseUpOrLeave()}
                 onMouseMove={this.handleMouseMove}
                 onTouchStart={this.handleTouchStart}
                 onTouchEnd={this.handleTouchEnd}
                 onTouchMove={this.handleTouchMove}
-            />
+            >{this.props.children}</canvas>
         );
     }
 }
@@ -550,7 +562,12 @@ export default function Editor({className, style}: {className?: string | undefin
     const mediaSelectorDropzone = useDropzone({ maxFiles: 1, onDrop: onDrop, noKeyboard: true })
 
     // Tool Area
-    var [toolNumber, setToolNumber] = useState(-1);
+    var [toolNumber, setToolNumber] = useState(0);
+
+    
+    var handwriteTimeout = useRef<NodeJS.Timeout | null>(null);
+    var [handwriteMode, setHandwriteMode] = useState(false);
+    var handwriteItems = useRef<DrawingPeice[]>([]);
 
     var [drawingMode, setDrawingMode] = useState(0);
 
@@ -604,141 +621,197 @@ export default function Editor({className, style}: {className?: string | undefin
 
     return <div className={"flex flex-col overflow-hidden " + className} style={style}>
 
-        <ReactModal isOpen={mediaSelectorMode != "none"} onRequestClose={() => setMediaSelectorMode("none")}>
-            <div className={"flex flex-col h-full w-[full] items-center"}>
+        <dialog style={{
+            width: "600px",
+            height: "400px",
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            marginLeft: "-300px",
+            marginTop: "-200px",
+            zIndex: 1000
+        }} open={mediaSelectorMode != "none"} onClose={() => setMediaSelectorMode("none")}>
+            <div className={"flex flex-row h-full w-[full] items-center"}>
                 <div className="w-[50%] 
-                                border-4 border-sky-500 border-dashed rounded-3xl
                                 flex justify-center
                                 cursor-pointer
                                 py-6 m-5
                                 transition-all
-                                "
+                                " //  border-4 border-sky-500 border-dashed rounded-3xl
                      style={mediaSelectorDropzone.isDragActive? {scale:"120%"} : {}}
                      {...mediaSelectorDropzone.getRootProps()}
                 >
-                    <p className="select-none">
-                        <span className="text-2xl block">Drop {mediaSelectorMode} file</span>
+                    <p className="select-none text-center">
+                        <span className="text-2xl block">Drop {mediaSelectorMode}</span>
                         <button className="text-gray-500 block">Or click here to choose</button>
                     </p>
                     <input id={`input-mediaselector-${documentData.id}`} className="hidden" type="file" {...mediaSelectorDropzone.getInputProps()}/>
                 </div>
-                <div className="flex w-full my-6">
-                    <div className="grow flex items-center"><hr className="grow border-y-2 border-dashed"/></div>
+                <div className="flex flex-col h-full justify-center">
+                <div className="grow flex flex-col items-center"><hr className="grow w-[4px] border-x-2 border-dashed"/></div>
                     <span className="text-slate-400">OR</span>
-                    <div className="grow flex items-center"><hr className="grow border-y-2 border-dashed"/></div>
-                </div>
-                <div>
-                    Input url for {mediaSelectorMode}
-                    <input className="border-2" value={mediaSelectorUrl} onChange={e => setMediaSelectorUrl(e.target.value)}/>
+                    <div className="grow flex flex-col items-center"><hr className="grow w-[4px] border-x-2 border-dashed"/></div>
                 </div>
                 
                 <div className="grow overflow-hidden">
-                    <img src={mediaSelectorUrl} alt="Image Preview"></img>
+                    <input className="w-full border-2" value={mediaSelectorUrl} onChange={e => setMediaSelectorUrl(e.target.value)} placeholder={"Input url for" + mediaSelectorMode}/>
+                    <img className="w-[200px] h-[200px] object-cover" src={mediaSelectorUrl} alt="Image Preview"></img>
                 </div>
 
-                <button className="w-full bg-sky-100 py-2" onClick={() => {
+                <button className="h-full bg-sky-100 py-2" onClick={() => {
                     mediaSelectorCallback.current && mediaSelectorCallback.current(mediaSelectorUrl);
                     mediaSelectorCallback.current = () => {};
                     setMediaSelectorMode("none");
                 }}>Done!</button>
             </div>
-        </ReactModal>
+        </dialog>
 
-        <TabBox select={toolNumber} onSelect={setToolNumber} tabnames={["File", "Edit", "View"]}>
-            <div>FileMenu</div>
-            <div className="flex flex-row">
-                <div className="flex flex-row">
-                    <div className="flex flex-col cursor-pointer items-center">
-                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==1 ? 0 : 1)}/>
-                        <input id={`input-pencolor1-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor1} onChange={e => setDrawingColor1(e.target.value)} />
-                    </div>
-                    <div className="flex flex-col cursor-pointer items-center">
-                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==2?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==2 ? 0 : 2)}/>
-                        <input id={`input-pencolor2-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor2} onChange={e => setDrawingColor2(e.target.value)} />
-                    </div>
-                    <div className="flex flex-col cursor-pointer items-center">
-                        <Image className={"h-8 w-8 rounded-lg" + (drawingMode==3?" bg-slate-200":"")} src={pen} alt="" onClick={() => setDrawingMode(drawingMode==3 ? 0 : 3)}/>
-                        <input id={`input-pencolor3-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor3} onChange={e => setDrawingColor3(e.target.value)} />
-                    </div>
-                </div>
-            </div>
-            <div className="flex flex-col">
-                <div>
-                    <input id={`input-docspell-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentSpell} onChange={() => setDocumentSpell(!docmuentSpell)} />
-                    <label htmlFor={`input-docspell-${documentData.id}`} className="cursor-pointer">Check Spell</label>
-                </div>
-                <div>
-                    <input id={`input-docgrid-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentGrid} onChange={() => setDocumentGrid(!docmuentGrid)} />
-                    <label htmlFor={`input-docgrid-${documentData.id}`} className="cursor-pointer">Use Grid</label>
-                </div>
-            </div>
-        </TabBox>
         
-        <div className="flex flex-col flex-auto items-center overflow-y-auto overflow-x-hidden h-full bg-slate-100 bluescroll"
-            // For dragdrop system
-            style={isDraggingBlock ? { cursor:"pointer" } : {}}
-            onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
-            onMouseMove={event => {
-                var docview = document.getElementById("documentview-"+documentData.id);
-                var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
-                if (docview == null || draggingBlock == null) return;
-                draggingBlock.style.left = `${event.clientX + 8}px`;
-                draggingBlock.style.top = event.clientY + "px"; // Plus 8 cause mr-2
-                
-                var blocks = Array.from(docview.getElementsByTagName("div")).filter(element => element.id.startsWith(`block-${documentData.id}`))
-                // console.log(blocks)
-                // TODO
-            }}
-        >
-            <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
-                <div id={"draggingblock-"+documentData.id}
-                    className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
-                    style={{left:0, top:0}}
-                />
-                <Canvas id={"canvas-"+documentData.id} drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/>
+        <div className="w-full h-[40px] bg-[#E5E5E5] flex flex-row">
+            <div className="w-[40px] h-[40px] bg-[#E5E5E5] border-y-2 border-x-2 border-[#A0A0A0] hover:bg-[#E5E5E5]"/>
+            <div className="w-[200px] h-[40px] bg-[#E5E5E5] border-y-2 border-r-2 border-[#A0A0A0] text-lg font-bold flex flex-col justify-center items-center ">{documentData.title}</div>
+        </div>
+        
+        <div className="w-full grow flex flex-row">
+            <div className="w-[40px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]">
+                <Image src={edit} alt="" onClick={() => setToolNumber(toolNumber==1?0:1)}/>
+                <Image src={edit} alt="" onClick={() => setToolNumber(toolNumber==2?0:2)}/>
+            </div>
+            <div className="w-[200px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]" style={{display:(toolNumber!=0?"block":"none")}}>
+                <div className={"w-full h-full" + (toolNumber==1?"":" hidden")}>
+                    <button className="cursor-pointer disabled:text-gray-500" disabled={handwriteMode} 
+                            onClick={() => {setHandwriteMode(true); setDrawingMode(0);}}>
+                    handwrite</button>
+                    <div className="flex flex-row">
+                        <div className="flex flex-col cursor-pointer items-center">
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==1 ? 0 : 1); setHandwriteMode(false);}}/>
+                            <input id={`input-pencolor1-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor1} onChange={e => setDrawingColor1(e.target.value)} />
+                        </div>
+                        <div className="flex flex-col cursor-pointer items-center">
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==2?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==2 ? 0 : 2); setHandwriteMode(false);}}/>
+                            <input id={`input-pencolor2-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor2} onChange={e => setDrawingColor2(e.target.value)} />
+                        </div>
+                        <div className="flex flex-col cursor-pointer items-center">
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==3?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==3 ? 0 : 3); setHandwriteMode(false);}}/>
+                            <input id={`input-pencolor3-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor3} onChange={e => setDrawingColor3(e.target.value)} />
+                        </div>
+                    </div>
+                </div>
+                <div className={"w-full h-full" + (toolNumber==2?"":" hidden")}>
+                    <div>
+                        <input id={`input-docspell-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentSpell} onChange={() => setDocumentSpell(!docmuentSpell)} />
+                        <label htmlFor={`input-docspell-${documentData.id}`} className="cursor-pointer">Check Spell</label>
+                    </div>
+                    <div>
+                        <input id={`input-docgrid-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentGrid} onChange={() => setDocumentGrid(!docmuentGrid)} />
+                        <label htmlFor={`input-docgrid-${documentData.id}`} className="cursor-pointer">Use Grid</label>
+                    </div>
+                </div>
+            </div>
+            <div className="grow h-full flex flex-col flex-auto items-center overflow-y-auto overflow-x-hidden bg-slate-100 bluescroll relative"
+                // For dragdrop system
+                style={isDraggingBlock ? { cursor:"pointer" } : {}}
+                onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
+                onMouseMove={event => {
+                    var docview = document.getElementById("documentview-"+documentData.id);
+                    var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                    if (docview == null || draggingBlock == null) return;
+                    draggingBlock.style.left = `${event.clientX + 8}px`;
+                    draggingBlock.style.top = event.clientY + "px"; // Plus 8 cause mr-2
                     
-                {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
-                {docmuentBlocks.map((block, index) => (
-                                    <div key={"blockholder-"+documentData.id+"-"+index}>
-                                        <div key={"blocksidetool-"+documentData.id+"-"+index} className={"absolute right-full float-left flex items-start"+(!isDraggingBlock && (targettingBlock==index || targettingBlock==index+0.5)?"":" hidden")}
-                                            onMouseEnter={() => setTargettingBlock(index+0.5)}
-                                            onMouseLeave={() => (targettingBlock==index+0.5) && setTargettingBlock(-1)}>
-                                            <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
-                                                    onClick={() => {
-                                                        setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
-                                                        setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero()});
-                                                    }}
-                                            >+</button>
-                                            <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
-                                                    onMouseDown={() => {
-                                                        var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
-                                                        if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
-                                                        setDraggingBlock(index);
-                                                    }}
-                                                    onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
-                                            >::</button>
+                    var blocks = Array.from(docview.getElementsByTagName("div")).filter(element => element.id.startsWith(`block-${documentData.id}`))
+                    // console.log(blocks)
+                    // TODO
+                }}
+            >
+                
+                <Canvas id={"canvas-handwrite-"+documentData.id} className={"absolute left-0 top-0 w-full h-full z-[100]"+(handwriteMode?"  bg-[#222222aa]":"")}
+                        drawingMode={handwriteMode} drawingColor={"white"} drawingItems={handwriteItems} 
+                        onDrawStart={ () => { handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current); handwriteTimeout.current = null; }}
+                        onDrawEnd={ () => {
+                            function onHandwriteEnd() {
+                                
+                                var trace: number[][][] = handwriteItems.current.map(peice => {
+                                    var X = peice.segments.map(segment => segment.x)
+                                    var Y = peice.segments.map(segment => segment.y)
+                                    return [X, Y];
+                                });
+                                
+                                var options: HandwritingRecognizeOptions = {
+                                    width: 1,
+                                    height: 1,
+                                    language: "ko",
+                                    numOfWords: undefined,
+                                    numOfReturn: 5
+                                }
+                                HandwritingRecognize(trace, options, results => {
+                                    console.log(results);
+                            
+                                    setHandwriteMode(false);
+
+                                    handwriteItems.current = []
+                                    var canvas = Array.from(document.getElementsByTagName("canvas")).filter(element => element.id == "canvas-handwrite-"+documentData.id).at(0)
+                                    canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+                                }, console.error);
+
+                            }
+
+                            handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current);
+                            handwriteTimeout.current = setTimeout(onHandwriteEnd, 3000)
+                        }} />
+                <p className={"absolute left-0 top-0 z-[110] text-white"+(handwriteMode?"":" hidden")}>Write down something...</p>
+
+
+                <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
+                    <div id={"draggingblock-"+documentData.id}
+                        className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
+                        style={{left:0, top:0}}
+                    />
+                    <Canvas id={"canvas-draw-"+documentData.id} className="absolute top-0 w-full h-full" drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/> 
+                    
+                    {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
+                    {docmuentBlocks.map((block, index) => (
+                                        <div key={"blockholder-"+documentData.id+"-"+index}>
+                                            <div key={"blocksidetool-"+documentData.id+"-"+index} className={"absolute right-full float-left flex items-start"+(!isDraggingBlock && (targettingBlock==index || targettingBlock==index+0.5)?"":" hidden")}
+                                                onMouseEnter={() => setTargettingBlock(index+0.5)}
+                                                onMouseLeave={() => (targettingBlock==index+0.5) && setTargettingBlock(-1)}>
+                                                <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                        onClick={() => {
+                                                            setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
+                                                            setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero()});
+                                                        }}
+                                                >+</button>
+                                                <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                        onMouseDown={() => {
+                                                            var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                                                            if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
+                                                            setDraggingBlock(index);
+                                                        }}
+                                                        onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
+                                                >::</button>
+                                            </div>
+                                            <Block
+                                                key={"block-"+documentData.id+"-"+index}
+
+                                                className={"m-0 bg-transparent"+(drawingMode?" select-none":"")}
+                                                spellCheck={docmuentSpell}
+
+                                                onMouseEnter={() => setTargettingBlock(index)}
+                                                onMouseLeave={() => targettingBlock==index && setTargettingBlock(-1)}
+
+                                                docid={documentData.id}
+                                                index={index}
+                                                blockData={block}
+                                                focusData={docmuentFocus}
+                                                fnAddBlock={fnAddBlock}
+                                                fnSetFocus={setDocumentFocus}
+
+                                                setMediaSelectorMode={setMediaSelectorMode}
+                                                mediaSelectorCallback={mediaSelectorCallback}
+                                            />
                                         </div>
-                                        <Block
-                                            key={"block-"+documentData.id+"-"+index}
-
-                                            className={"m-0 bg-transparent"+(drawingMode?" select-none":"")}
-                                            spellCheck={docmuentSpell}
-
-                                            onMouseEnter={() => setTargettingBlock(index)}
-                                            onMouseLeave={() => targettingBlock==index && setTargettingBlock(-1)}
-
-                                            docid={documentData.id}
-                                            index={index}
-                                            blockData={block}
-                                            focusData={docmuentFocus}
-                                            fnAddBlock={fnAddBlock}
-                                            fnSetFocus={setDocumentFocus}
-
-                                            setMediaSelectorMode={setMediaSelectorMode}
-                                            mediaSelectorCallback={mediaSelectorCallback}
-                                        />
-                                    </div>
-                            ))}
+                                ))}
+                </div>
             </div>
         </div>
         <button onClick={() => console.log(documentData)}>Print</button>
