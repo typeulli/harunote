@@ -9,6 +9,8 @@ import Image from "next/image";
 import edit from "@/../public/assets/edit.png"
 import { useDropzone } from "react-dropzone";
 import { HandwritingRecognize, HandwritingRecognizeOptions } from "@/utils/handwriting";
+import StyledText from "@/shared/components/StyledText";
+import { getFontHeight, getFontWidth } from "@/utils/TextUtil";
 
 enum BlockType {
     Text, Separator, H1, H2, H3, H4, Image
@@ -89,6 +91,8 @@ class FocusRange {
     
             return { start: index(this.startLine, this.startCol), end: index(this.endLine, this.endCol) };
     }
+
+    copy = () => new FocusRange(this.startLine, this.startCol, this.endLine, this.endCol)
 }
 type FocusData = {
     index: number, 
@@ -150,7 +154,7 @@ interface BlockProps extends React.HTMLProps<HTMLDivElement> {
     focusData: FocusData;
 
     fnAddBlock: (index: number) => void;
-    fnSetFocus: (value: FocusData) => void;
+    fnSetFocus: React.Dispatch<React.SetStateAction<FocusData>>
 
     setMediaSelectorMode: React.Dispatch<React.SetStateAction<"none" | "image" | "video">>
     mediaSelectorCallback: React.MutableRefObject<((url: string) => void) | null>
@@ -232,7 +236,10 @@ const Block: React.FC<BlockProps> = ({
         };
         if (source) {
             if (selectionStart == 0 && event.key == "ArrowLeft") {
-                fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1)}); //TODO
+                if (selectionStart == selectionEnd)
+                    fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1)}); //TODO
+                else
+                    fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionStart)});
                 event.preventDefault(); return;
             };
             if (selectionEnd == (textarea?.value.length ?? -1) && event.key == "ArrowRight") {
@@ -243,23 +250,34 @@ const Block: React.FC<BlockProps> = ({
         
         if (source && selectionStart != -1 && selectionEnd != -1 && event.key.startsWith("Arrow")) {
             var current = FocusRange.fromSource(source, selectionStart, selectionEnd);
-            if (event.key == "ArrowLeft") current = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
-            if (event.key == "ArrowRight") current = FocusRange.fromSource(source, Math.min(selectionStart+1, source.length), Math.min(selectionStart+1, source.length));
+            if (event.key == "ArrowLeft") {
+                var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                if (event.shiftKey) {
+                    current.startCol = move.startCol;
+                    current.startLine = move.startLine;
+                }
+                else current = move;
+            }
+            if (event.key == "ArrowRight") {
+                var move = FocusRange.fromSource(source, Math.min(selectionEnd+1, source.length), Math.min(selectionEnd+1, source.length));
+                if (event.shiftKey) {
+                    var move = FocusRange.fromSource(source, selectionStart+1, selectionStart+1);
+                    current.startCol = move.startCol;
+                    current.startLine = move.startLine;
+                }
+                else current = move;
+            }
             if (event.key == "ArrowUp") {
-                current = FocusRange.fromSource(source, selectionStart, selectionStart);
                 current.startLine = Math.max(current.startLine - 1, 0);
                 current.endLine = current.startLine;
+                current.endCol = current.startCol;
             }
             if (event.key == "ArrowDown") {
-                current = FocusRange.fromSource(source, selectionStart, selectionStart);
                 current.startLine = Math.min(current.startLine + 1, source.split("\n").length);
                 current.endLine = current.startLine;
+                current.startCol = current.endCol;
             }
-            if (event.key == "ArrowUp" || event.key == "ArrowDown") {
-                if (focusData.selection.startCol > current.startCol) { current.startCol = focusData.selection.startCol; }
-                if (focusData.selection.endCol > current.endCol) { current.endCol = focusData.selection.endCol; }
-            }
-            fnSetFocus({index:index, selection:current});
+            fnSetFocus({index:index, selection:current.copy()});
             event.preventDefault();
         }
     }
@@ -316,17 +334,22 @@ const Block: React.FC<BlockProps> = ({
         }
     }
     var onChange: ChangeEventHandler<HTMLTextAreaElement> = useCallback(event => executeText(event.target.value), [index, blockData]);
-    return <div id={`block-${docid}-${index}`} {...props} onKeyDown={onKeyDown}>
+    return <div id={`block-${docid}-${index}`} {...props} className="relative" onKeyDown={onKeyDown}>
         {
         blockData.type == BlockType.Separator? <hr className="mt-[4px] mb-[3px] border-y-2" />
         :blockData.type == BlockType.Image?<img src={source ?? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTbNX2nABlu-_8PGz9k2j6uexK1mucQgtGhhg&s"} className="select-none drag resize" draggable={false} />
         :
+        <>
         <textarea 
                 onMouseUp={onMouseUp}
 
                 id={`input-${docid}-${index}`}
 
-                className={"bg-transparent placeholder:text-transparent focus:placeholder:text-gray-400 overflow-hidden resize-none outline-none"
+                className={
+                    "bg-transparent text-transparent caret-black"
+                    + " placeholder:text-transparent focus:placeholder:text-gray-400"
+                    + " overflow-hidden resize-none outline-none"
+                    + " absolute top-0 left-0"
                     + (blockData.type == BlockType.Text? " block h-[30px]" : "")
                     + (blockData.type == BlockType.H1?   " block h-[1.34em] text-[2em] mr-0 ml-0 font-bold" : "") // mt-[0.67em] mb-[0.67em]
                     + (blockData.type == BlockType.H2?   " block h-[1.66em] text-[1.5em] mr-0 ml-0 font-bold" : "") // mt-[0.83em] mb-[0.83em]
@@ -334,10 +357,12 @@ const Block: React.FC<BlockProps> = ({
                     + (blockData.type == BlockType.H4?   " block mr-0 ml-0 font-bold" : "") // mt-[0.83em] mb-[0.83em]
                     
                 }
-                style={{width:"100%", border:0}}
+                style={{width:"100%", border:0}}//, color:"transparent"}}
 
                 value={text} onChange={onChange} placeholder={"Write down something surprising!"}
-                onInput={fixHeight}/>
+                onInput={fixHeight} />
+                <StyledText item={[{text:text, colorfg:"red"}]}/>
+        </>
         }
     </div>
 }
@@ -561,13 +586,14 @@ export default function Editor({className, style}: {className?: string | undefin
     }, [])
     const mediaSelectorDropzone = useDropzone({ maxFiles: 1, onDrop: onDrop, noKeyboard: true })
 
-    // Tool Area
-    var [toolNumber, setToolNumber] = useState(0);
+    // Sidebar Area
+    var [sidebarNumber, setSidebarNumber] = useState(0);
 
     
     var handwriteTimeout = useRef<NodeJS.Timeout | null>(null);
     var [handwriteMode, setHandwriteMode] = useState(false);
     var handwriteItems = useRef<DrawingPeice[]>([]);
+    var [handwriteResult, setHandwriteResults] = useState<string[]>([]);
 
     var [drawingMode, setDrawingMode] = useState(0);
 
@@ -578,7 +604,7 @@ export default function Editor({className, style}: {className?: string | undefin
     useEffect(() => { documentData.draw.color2=drawingColor2 }, [drawingColor2]);
     useEffect(() => { documentData.draw.color3=drawingColor3 }, [drawingColor3]);
     var drawingItems = useRef(documentData.draw.items);
-    // Tool Area
+    // Sidebar Area
 
     
     // Editor Area
@@ -598,6 +624,7 @@ export default function Editor({className, style}: {className?: string | undefin
     var [draggingStick, setDraggingStick] = useState(-1);
     var [isDraggingBlock, setIsDraggingBlock] = useState(false);
 
+    var [toolbarMode, setToolbarMode] = useState(false);
 
 
     function fnAddBlock(index: number) {
@@ -612,15 +639,31 @@ export default function Editor({className, style}: {className?: string | undefin
             var selection = docmuentFocus.selection.toRawCol(element.value);
             element.setSelectionRange(selection.start, selection.end);
             element.focus();
+
+            setToolbarMode(selection.start != selection.end);
+
+            var toolbar = document.getElementById("toolbar-"+documentData.id) as HTMLDivElement;
+            if (toolbar) {
+                var targetLine = element.value.split("\n")[docmuentFocus.selection.startLine];
+                if (!targetLine) return;
+                var offsetX = element.getBoundingClientRect().left + getFontWidth(element, targetLine.slice(0, docmuentFocus.selection.startLine == docmuentFocus.selection.endLine? docmuentFocus.selection.endCol : targetLine.length-1))
+
+                // This is code for absolute (current fixed)
+                // var offsetY = element.value.split("\n").slice(0, docmuentFocus.selection.startLine).map(line => getFontHeight(element, line)).reduce((a, b) => a + b, 0);
+                // offsetY += [...Array(docmuentFocus.index)].map((value, index) => document.getElementById(`input-${documentData.id}-${index}`)?.clientHeight ?? 0).reduce((a, b) => a + b, 0);
+                // offsetY -= toolbar.clientHeight;
+
+                var offsetY = element.getBoundingClientRect().top - toolbar.clientHeight;
+                console.log(toolbar.scrollHeight);
+                toolbar.style.left = offsetX + "px";
+                toolbar.style.top = offsetY + "px";
+            }
         }
         else setTimeout(focus, 5);
     }
-    useEffect(
-        focus, [docmuentFocus]
-    );
+    useEffect(focus, [docmuentFocus]);
 
     return <div className={"flex flex-col overflow-hidden " + className} style={style}>
-
         <dialog style={{
             width: "600px",
             height: "400px",
@@ -674,14 +717,28 @@ export default function Editor({className, style}: {className?: string | undefin
         
         <div className="w-full grow flex flex-row">
             <div className="w-[40px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]">
-                <Image src={edit} alt="" onClick={() => setToolNumber(toolNumber==1?0:1)}/>
-                <Image src={edit} alt="" onClick={() => setToolNumber(toolNumber==2?0:2)}/>
+                <Image src={edit} alt="" onClick={() => setSidebarNumber(sidebarNumber==1?0:1)}/>
+                <Image src={edit} alt="" onClick={() => setSidebarNumber(sidebarNumber==2?0:2)}/>
             </div>
-            <div className="w-[200px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]" style={{display:(toolNumber!=0?"block":"none")}}>
-                <div className={"w-full h-full" + (toolNumber==1?"":" hidden")}>
-                    <button className="cursor-pointer disabled:text-gray-500" disabled={handwriteMode} 
-                            onClick={() => {setHandwriteMode(true); setDrawingMode(0);}}>
-                    handwrite</button>
+            <div className="w-[200px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]" style={{display:(sidebarNumber!=0?"block":"none")}}>
+                <div className={"w-full h-full" + (sidebarNumber==1?"":" hidden")}>
+                    <div className="flex flex-row">
+                        <button id={`button-handwrite-${documentData.id}`}
+                                className="disabled:text-gray-500" disabled={handwriteMode} 
+                                onClick={() => {
+                                    var firstItem = handwriteResult.at(0);
+                                    if (firstItem) {
+                                        window.navigator.clipboard.writeText(firstItem);
+                                        setHandwriteResults([]);
+                                    } else {
+                                        setHandwriteMode(true);
+                                        setDrawingMode(0);
+                                    }
+                                }}>
+                        {handwriteResult.length > 0? `Copy '${handwriteResult.at(0)}'`:"Click to handwrite"}</button>
+                        <button className="hover:text-red-500 active:text-white active:bg-red-500 rounded-md w-5 h-5" style={{visibility:handwriteResult.length>0?"visible":"collapse"}} onClick={() => setHandwriteResults([])}>X</button>
+                    </div>
+
                     <div className="flex flex-row">
                         <div className="flex flex-col cursor-pointer items-center">
                             <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==1 ? 0 : 1); setHandwriteMode(false);}}/>
@@ -697,7 +754,7 @@ export default function Editor({className, style}: {className?: string | undefin
                         </div>
                     </div>
                 </div>
-                <div className={"w-full h-full" + (toolNumber==2?"":" hidden")}>
+                <div className={"w-full h-full" + (sidebarNumber==2?"":" hidden")}>
                     <div>
                         <input id={`input-docspell-${documentData.id}`} className="cursor-pointer" type="checkbox" checked={docmuentSpell} onChange={() => setDocumentSpell(!docmuentSpell)} />
                         <label htmlFor={`input-docspell-${documentData.id}`} className="cursor-pointer">Check Spell</label>
@@ -708,7 +765,7 @@ export default function Editor({className, style}: {className?: string | undefin
                     </div>
                 </div>
             </div>
-            <div className="grow h-full flex flex-col flex-auto items-center overflow-y-auto overflow-x-hidden bg-slate-100 bluescroll relative"
+            <div className="grow h-full flex flex-col flex-auto items-center overflow-y-scroll overflow-x-hidden bg-slate-100 bluescroll relative"
                 // For dragdrop system
                 style={isDraggingBlock ? { cursor:"pointer" } : {}}
                 onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
@@ -729,8 +786,8 @@ export default function Editor({className, style}: {className?: string | undefin
                         drawingMode={handwriteMode} drawingColor={"white"} drawingItems={handwriteItems} 
                         onDrawStart={ () => { handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current); handwriteTimeout.current = null; }}
                         onDrawEnd={ () => {
-                            function onHandwriteEnd() {
-                                
+                            function HandwriteRefresh(endWriting: boolean = true) {
+
                                 var trace: number[][][] = handwriteItems.current.map(peice => {
                                     var X = peice.segments.map(segment => segment.x)
                                     var Y = peice.segments.map(segment => segment.y)
@@ -745,19 +802,21 @@ export default function Editor({className, style}: {className?: string | undefin
                                     numOfReturn: 5
                                 }
                                 HandwritingRecognize(trace, options, results => {
-                                    console.log(results);
-                            
-                                    setHandwriteMode(false);
 
+                                    setHandwriteResults(results);
+                                }, console.error);
+
+                                if (endWriting){
+                                    setHandwriteMode(false);
                                     handwriteItems.current = []
                                     var canvas = Array.from(document.getElementsByTagName("canvas")).filter(element => element.id == "canvas-handwrite-"+documentData.id).at(0)
                                     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-                                }, console.error);
-
+                                }
                             }
 
+                            HandwriteRefresh(false);
                             handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current);
-                            handwriteTimeout.current = setTimeout(onHandwriteEnd, 3000)
+                            handwriteTimeout.current = setTimeout(HandwriteRefresh, 2000)
                         }} />
                 <p className={"absolute left-0 top-0 z-[110] text-white"+(handwriteMode?"":" hidden")}>Write down something...</p>
 
@@ -767,6 +826,12 @@ export default function Editor({className, style}: {className?: string | undefin
                         className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
                         style={{left:0, top:0}}
                     />
+                    <div id={"toolbar-"+documentData.id}
+                        className={"fixed text-gray-400 bg-white border-2 rounded-lg z-[100] w-36 h-8 flex flex-row items-center"}
+                        style={{left:0, top:0, visibility:toolbarMode?"visible":"hidden"}}
+                    >
+                        <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600">A</button>
+                    </div>
                     <Canvas id={"canvas-draw-"+documentData.id} className="absolute top-0 w-full h-full" drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/> 
                     
                     {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
