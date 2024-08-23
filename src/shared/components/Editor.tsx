@@ -9,7 +9,7 @@ import Image from "next/image";
 import edit from "@/../public/assets/edit.png"
 import { useDropzone } from "react-dropzone";
 import { HandwritingRecognize, HandwritingRecognizeOptions } from "@/utils/handwriting";
-import StyledText from "@/shared/components/StyledText";
+import StyledText, { StyledTextData } from "@/shared/components/StyledText";
 import { getFontHeight, getFontWidth } from "@/utils/TextUtil";
 
 enum BlockType {
@@ -96,7 +96,8 @@ class FocusRange {
 }
 type FocusData = {
     index: number, 
-    selection: FocusRange
+    selection: FocusRange,
+    reversed: boolean
 }
 
 type DrawingSegment = {
@@ -136,7 +137,7 @@ class Document {
         this.id = id;
         this.title = title;
         this.blocks = [new BlockData(BlockType.Text)];
-        this.focus = {index:0, selection:FocusRange.zero()};
+        this.focus = {index:0, selection:FocusRange.zero(), reversed:false};
         this.draw = new DrawingData();
 
         this.spell = true;
@@ -227,45 +228,74 @@ const Block: React.FC<BlockProps> = ({
         var firstLineEnd = source?.indexOf("\n") ?? -1;
         var lastLineStart = source?.lastIndexOf("\n") ?? -1;
         if ((firstLineEnd  == -1 || selectionStart <= firstLineEnd) && event.key == "ArrowUp"  ) { 
-            fnSetFocus({index:index-1, selection:FocusRange.col(-1,focusData.selection.startCol)}); 
+            fnSetFocus({index:index-1, selection:FocusRange.col(-1, focusData.selection.startCol), reversed: false}); 
             event.preventDefault(); return; 
         };
         if ((lastLineStart == -1 || selectionEnd   > lastLineStart) && event.key == "ArrowDown") {
-            fnSetFocus({index:index+1, selection:FocusRange.col(0, focusData.selection.endCol)});
+            fnSetFocus({index:index+1, selection:FocusRange.col(0, focusData.selection.endCol), reversed: false});
             event.preventDefault(); return;
         };
         if (source) {
             if (selectionStart == 0 && event.key == "ArrowLeft") {
                 if (selectionStart == selectionEnd)
-                    fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1)}); //TODO
+                    fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1), reversed: false}); //TODO
                 else
-                    fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionStart)});
+                    fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionStart), reversed: false});
                 event.preventDefault(); return;
             };
             if (selectionEnd == (textarea?.value.length ?? -1) && event.key == "ArrowRight") {
-                fnSetFocus({index:index+1, selection:FocusRange.zero()});
+                fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
                 event.preventDefault(); return; 
             };
         }
         
         if (source && selectionStart != -1 && selectionEnd != -1 && event.key.startsWith("Arrow")) {
             var current = FocusRange.fromSource(source, selectionStart, selectionEnd);
+            var reversed = focusData.reversed;
             if (event.key == "ArrowLeft") {
-                var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
                 if (event.shiftKey) {
-                    current.startCol = move.startCol;
-                    current.startLine = move.startLine;
+                    if (current.startCol == current.endCol) {
+                        var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                        current.startCol = move.startCol;
+                        current.startLine = move.startLine;
+                        reversed = true;
+                    } else if (reversed) {
+                        var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                        current.startCol = move.startCol;
+                        current.startLine = move.startLine;
+                    } else {
+                        var move = FocusRange.fromSource(source, Math.max(selectionEnd-1, 0), Math.max(selectionEnd-1, 0));
+                        current.endCol = move.endCol;
+                        current.endLine = move.endLine;
+                    }
                 }
-                else current = move;
+                else {
+                    if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                    else                                    current = FocusRange.fromSource(source, Math.min(selectionStart, selectionEnd), Math.min(selectionStart, selectionEnd))
+                }
             }
             if (event.key == "ArrowRight") {
-                var move = FocusRange.fromSource(source, Math.min(selectionEnd+1, source.length), Math.min(selectionEnd+1, source.length));
                 if (event.shiftKey) {
-                    var move = FocusRange.fromSource(source, selectionStart+1, selectionStart+1);
-                    current.startCol = move.startCol;
-                    current.startLine = move.startLine;
+                    
+                    if (current.startCol == current.endCol) {
+                        var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
+                        current.endCol = move.endCol;
+                        current.endLine = move.endLine;
+                        reversed = false;
+                    } else if (reversed) {
+                        var move = FocusRange.fromSource(source, selectionStart+1, selectionStart+1);
+                        current.startCol = move.startCol;
+                        current.startLine = move.startLine;
+                    } else {
+                        var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
+                        current.endCol = move.endCol;
+                        current.endLine = move.endLine;
+                    }
                 }
-                else current = move;
+                else {
+                    if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.min(selectionEnd+1, source.length), Math.min(selectionEnd+1, source.length));
+                    else                                    current = FocusRange.fromSource(source, Math.max(selectionStart, selectionEnd), Math.max(selectionStart, selectionEnd))
+                }
             }
             if (event.key == "ArrowUp") {
                 current.startLine = Math.max(current.startLine - 1, 0);
@@ -277,7 +307,7 @@ const Block: React.FC<BlockProps> = ({
                 current.endLine = current.startLine;
                 current.startCol = current.endCol;
             }
-            fnSetFocus({index:index, selection:current.copy()});
+            fnSetFocus({index:index, selection:current.copy(), reversed: reversed});
             event.preventDefault();
         }
     }
@@ -286,8 +316,9 @@ const Block: React.FC<BlockProps> = ({
         var source = textarea?.value;
         var selectionStart = textarea?.selectionStart ?? -1;
         var selectionEnd = textarea?.selectionEnd ?? -1;
-        if (source) 
-            fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionEnd)});
+        var direction = textarea?.selectionDirection == "backward"? true : (textarea?.selectionDirection == "forward"? false : null)
+        if (source && (direction != null)) 
+            fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionEnd), reversed: direction});
     }
     function executeText(text: string) {
         blockData.text = text
@@ -296,30 +327,30 @@ const Block: React.FC<BlockProps> = ({
             blockData.type = BlockType.Separator
             blockData.text = "";
             setText("");
-            fnSetFocus({index:index+1, selection:FocusRange.zero()});
+            fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
         } else if (text == "/h1" || text == "# ") {
             blockData.type = BlockType.H1
             blockData.text = "";
             setText("");
-            fnSetFocus({index:index, selection:FocusRange.zero()});
+            fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
         } else if (text == "/h2" || text == "## ") {
             blockData.type = BlockType.H2
             blockData.text = "";
             setText("");
-            fnSetFocus({index:index, selection:FocusRange.zero()});
+            fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
         } else if (text == "/h3" || text == "### ") {
             blockData.type = BlockType.H3
             blockData.text = "";
             setText("");
-            fnSetFocus({index:index, selection:FocusRange.zero()});
+            fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
         } else if (text == "/h4" || text == "#### ") {
             blockData.type = BlockType.H4
             blockData.text = "";
             setText("");
-            fnSetFocus({index:index, selection:FocusRange.zero()});
+            fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
         } else if (text == "/image") {
             blockData.type = BlockType.Image
@@ -329,7 +360,7 @@ const Block: React.FC<BlockProps> = ({
             setMediaSelectorMode("image");
             mediaSelectorCallback.current = url => {
                 setSource(url);
-                fnSetFocus({index:index+1, selection:FocusRange.zero()});
+                fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
             }
         }
     }
@@ -346,7 +377,8 @@ const Block: React.FC<BlockProps> = ({
                 id={`input-${docid}-${index}`}
 
                 className={
-                    "bg-transparent text-transparent caret-black"
+                    "bg-transparent"
+                    + " text-transparent caret-black"
                     + " placeholder:text-transparent focus:placeholder:text-gray-400"
                     + " overflow-hidden resize-none outline-none"
                     + " absolute top-0 left-0"
@@ -361,7 +393,7 @@ const Block: React.FC<BlockProps> = ({
 
                 value={text} onChange={onChange} placeholder={"Write down something surprising!"}
                 onInput={fixHeight} />
-                <StyledText item={[{text:text, colorfg:"red"}]}/>
+                <StyledText stdataList={[new StyledTextData(text,"red") ]}/>
         </>
         }
     </div>
@@ -624,13 +656,13 @@ export default function Editor({className, style}: {className?: string | undefin
     var [draggingStick, setDraggingStick] = useState(-1);
     var [isDraggingBlock, setIsDraggingBlock] = useState(false);
 
-    var [toolbarMode, setToolbarMode] = useState(false);
+    var [shortToolbarMode, setShortToolbarMode] = useState(false);
 
 
     function fnAddBlock(index: number) {
         var data: BlockData = new BlockData(BlockType.Text);
         setDocumentBlocks([...docmuentBlocks.slice(0, index), data, ...docmuentBlocks.slice(index, docmuentBlocks.length)])
-        setDocumentFocus({index: index, selection:docmuentFocus.selection});
+        setDocumentFocus({index: index, selection:docmuentFocus.selection, reversed: false});
     }
 
     function focus() {
@@ -640,10 +672,10 @@ export default function Editor({className, style}: {className?: string | undefin
             element.setSelectionRange(selection.start, selection.end);
             element.focus();
 
-            setToolbarMode(selection.start != selection.end);
+            setShortToolbarMode(selection.start != selection.end);
 
-            var toolbar = document.getElementById("toolbar-"+documentData.id) as HTMLDivElement;
-            if (toolbar) {
+            var shorttoolbar = document.getElementById("shorttoolbar-"+documentData.id) as HTMLDivElement;
+            if (shorttoolbar) {
                 var targetLine = element.value.split("\n")[docmuentFocus.selection.startLine];
                 if (!targetLine) return;
                 var offsetX = element.getBoundingClientRect().left + getFontWidth(element, targetLine.slice(0, docmuentFocus.selection.startLine == docmuentFocus.selection.endLine? docmuentFocus.selection.endCol : targetLine.length-1))
@@ -653,10 +685,18 @@ export default function Editor({className, style}: {className?: string | undefin
                 // offsetY += [...Array(docmuentFocus.index)].map((value, index) => document.getElementById(`input-${documentData.id}-${index}`)?.clientHeight ?? 0).reduce((a, b) => a + b, 0);
                 // offsetY -= toolbar.clientHeight;
 
-                var offsetY = element.getBoundingClientRect().top - toolbar.clientHeight;
-                console.log(toolbar.scrollHeight);
-                toolbar.style.left = offsetX + "px";
-                toolbar.style.top = offsetY + "px";
+                var offsetY = element.getBoundingClientRect().top - shorttoolbar.clientHeight;
+                shorttoolbar.style.left = offsetX + "px";
+                shorttoolbar.style.top = offsetY + "px";
+            }
+
+            var focusinfoelement = document.getElementById(`p-focusinfo-`+documentData.id);
+            if (focusinfoelement) {
+                var char1 = "[" + (docmuentFocus.reversed?"R":" ")+ "]";
+                var char2 = "L 1";
+                var char3 = "Col " + (docmuentFocus.reversed? docmuentFocus.selection.startCol : docmuentFocus.selection.endCol);
+                var char4 = docmuentFocus.selection.startCol == docmuentFocus.selection.endCol? `` : ` (${Math.abs(docmuentFocus.selection.startCol - docmuentFocus.selection.endCol)} selected)`
+                focusinfoelement.innerText = char1 + " " + char2 + " " + char3 + char4;
             }
         }
         else setTimeout(focus, 5);
@@ -710,12 +750,12 @@ export default function Editor({className, style}: {className?: string | undefin
         </dialog>
 
         
-        <div className="w-full h-[40px] bg-[#E5E5E5] flex flex-row">
+        <div className="w-full h-[40px] grow-0 bg-[#E5E5E5] flex flex-row">
             <div className="w-[40px] h-[40px] bg-[#E5E5E5] border-y-2 border-x-2 border-[#A0A0A0] hover:bg-[#E5E5E5]"/>
             <div className="w-[200px] h-[40px] bg-[#E5E5E5] border-y-2 border-r-2 border-[#A0A0A0] text-lg font-bold flex flex-col justify-center items-center ">{documentData.title}</div>
         </div>
         
-        <div className="w-full grow flex flex-row">
+        <div className="w-full grow flex flex-row overflow-hidden relative"> {/* Should use relative for 'absolute' of 'toolbar' */}
             <div className="w-[40px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]">
                 <Image src={edit} alt="" onClick={() => setSidebarNumber(sidebarNumber==1?0:1)}/>
                 <Image src={edit} alt="" onClick={() => setSidebarNumber(sidebarNumber==2?0:2)}/>
@@ -765,7 +805,7 @@ export default function Editor({className, style}: {className?: string | undefin
                     </div>
                 </div>
             </div>
-            <div className="grow h-full flex flex-col flex-auto items-center overflow-y-scroll overflow-x-hidden bg-slate-100 bluescroll relative"
+            <div className="flex flex-col flex-auto items-center grow relative overflow-y-auto overflow-x-hidden bg-slate-100 bluescroll"
                 // For dragdrop system
                 style={isDraggingBlock ? { cursor:"pointer" } : {}}
                 onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
@@ -820,15 +860,16 @@ export default function Editor({className, style}: {className?: string | undefin
                         }} />
                 <p className={"absolute left-0 top-0 z-[110] text-white"+(handwriteMode?"":" hidden")}>Write down something...</p>
 
+                    
 
-                <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
+                <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow pb-[72px]" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
                     <div id={"draggingblock-"+documentData.id}
                         className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
                         style={{left:0, top:0}}
                     />
-                    <div id={"toolbar-"+documentData.id}
+                    <div id={"shorttoolbar-"+documentData.id}
                         className={"fixed text-gray-400 bg-white border-2 rounded-lg z-[100] w-36 h-8 flex flex-row items-center"}
-                        style={{left:0, top:0, visibility:toolbarMode?"visible":"hidden"}}
+                        style={{left:0, top:0, visibility:shortToolbarMode?"visible":"hidden"}}
                     >
                         <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600">A</button>
                     </div>
@@ -843,7 +884,7 @@ export default function Editor({className, style}: {className?: string | undefin
                                                 <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
                                                         onClick={() => {
                                                             setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
-                                                            setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero()});
+                                                            setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero(), reversed: false});
                                                         }}
                                                 >+</button>
                                                 <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
@@ -878,7 +919,20 @@ export default function Editor({className, style}: {className?: string | undefin
                                 ))}
                 </div>
             </div>
+            
+            <div className="absolute bottom-0 w-full flex justify-center">
+                <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap">
+                    Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 ...
+                </div>
+                
+                <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap ml-5">
+                    M1-M2-M3-M4
+                </div>
+            </div>
         </div>
-        <button onClick={() => console.log(documentData)}>Print</button>
+        <div className="h-[24px] bg-[#E5E5E5] text-[#909090] flex">
+            <p className="w-fit">Master  TODO:2  [x]0 [!]3 </p>
+            <p id={`p-focusinfo-`+documentData.id} className="w-fit">ppp</p>
+        </div>
     </div>
 }

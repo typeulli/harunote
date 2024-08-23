@@ -17,6 +17,5 @@ export const metadata: Metadata = {
 export default function New() {
     return (<main className='h-screen flex flex-col'>
         <Editor className='grow'/>
-        <p className='cursor-wait'>CopyRight</p>
     </main>);
 }
