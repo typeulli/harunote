@@ -39,6 +39,88 @@ export class StyledTextData extends StyledTextStyle {
     }
 }
 
+export function writeAt(target: StyledTextData[], index: number, text: string) {
+    var result: StyledTextData[] = target.map(x => ({...x} as StyledTextData))
+    var lookat = 0;
+    var datanum = -1;
+    var charindex = -1;
+    for (let i = 0; i < target.length; i++) {
+        const item = target[i];
+        if (index <= lookat + item.text.length - 1) {
+            datanum = i;
+            charindex = index - lookat; 
+            break;
+        }
+        lookat += item.text.length;
+    }
+    if (datanum == -1 && index <= target[target.length-1].text.length - 1) {
+        datanum = target.length-1;
+        charindex = index - lookat;
+    }
+    result[datanum].text = result[datanum].text.slice(0, charindex) + text + result[datanum].text.slice(charindex, result[datanum].text.length)
+    return result
+}
+
+export function writeAtRange(target: StyledTextData[], start: number, end: number, text: string) {
+    var lookat_start = 0;
+    var index_start = -1;
+    var charindex_start = -1;
+    for (let index = 0; index < target.length; index++) {
+        const item = target[index];
+        if (start <= lookat_start + item.text.length) { // Don't minus one because separoators between character is one more than charaters
+            index_start = index;
+            charindex_start = start - lookat_start; 
+            break;
+        }
+        lookat_start += item.text.length;
+    }
+    if (index_start == -1 && start <= target[target.length-1].text.length) {
+        index_start = target.length-1;
+        charindex_start = start - lookat_start;
+    }
+
+    var lookat_end = 0;
+    var index_end = -1;
+    var charindex_end = -1;
+    for (let index = 0; index < target.length; index++) {
+        const item = target[index];
+        if (end <= lookat_end + item.text.length) {
+            index_end = index;
+            charindex_end = end - lookat_end; 
+            break;
+        }
+        lookat_end += item.text.length;
+    }
+    if (index_end == -1 && end <= target[target.length-1].text.length) {
+        index_end = target.length-1;
+        charindex_end = end - lookat_end;
+    }
+    var results: StyledTextData[] = [];
+    target.forEach((value, index) => {
+        var lineAdded = false;
+        if (index_start == index) {
+            results.push(Object.assign({...value} as StyledTextData, {text: value.text.slice(0, charindex_start) + text}));
+            lineAdded = true;
+        }
+        if (index_start < index && index < index_end) {
+            return;
+        }
+        if (index_end == index) {
+            results.push(Object.assign(
+                {...value} as StyledTextData,
+                {text: value.text.slice(charindex_end, value.text.length)}
+            ));
+            lineAdded = true;
+        }
+        if (!lineAdded) {
+            results.push({...value} as StyledTextData);
+        }
+    });
+
+
+    return shortenDataOf(results);
+}
+
 function shortenDataOf(data: StyledTextData[]) {
     var result: StyledTextData[] = [];
     data.filter(value => value.text.length > 0).forEach(value => {
@@ -46,7 +128,6 @@ function shortenDataOf(data: StyledTextData[]) {
             result.push({...value} as StyledTextData);
             return;
         }
-        console.log(value.toStyle(), result[result.length-1].toStyle(), value.toStyle().eqstyle(result[result.length-1].toStyle()));
         if (value.toStyle().eqstyle(result[result.length-1].toStyle())
         ) result[result.length-1].text += value.text
         else result.push({...value} as StyledTextData)
@@ -93,7 +174,6 @@ export function applyStyle(start: number, end: number, style: StyledTextStyle, t
     }
 
 
-
     function removeUndefinedKeys(obj: any) {
         for (let key in obj) {
             if (obj[key] === undefined) {
@@ -105,29 +185,34 @@ export function applyStyle(start: number, end: number, style: StyledTextStyle, t
 
     var results: StyledTextData[] = [];
     target.forEach((value, index) => {
+        var lineAdded = false;
         if (index_start == index) {
             results.push(Object.assign({...value} as StyledTextData, {text: value.text.slice(0, charindex_start)}));
-            if (index_start == index_end) 
+            if (index_start != index_end) 
                 results.push(
-                    Object.assign(
-                        removeUndefinedKeys({...value}), 
-                        {text:value.text.slice(charindex_start, charindex_end-charindex_start)}, 
-                        removeUndefinedKeys({...style})
-                    ));
-            else results.push(
                     Object.assign(
                         removeUndefinedKeys({...value}), 
                         {text:value.text.slice(charindex_start, value.text.length)}, 
                         removeUndefinedKeys({...style})
                     ));
+            var lineAdded = true;
         }
-        else if (index_start < index && index < index_end) {
+        if (index_start < index && index < index_end) {
             results.push(Object.assign(
                 removeUndefinedKeys({...value}), 
                 removeUndefinedKeys({...style})
             ));
+            return;
         }
-        else if (index_end == index) {
+        if (index_start == index && index_end == index) {
+            var text = value.text.slice(charindex_start, charindex_end);
+            results.push(Object.assign(
+                removeUndefinedKeys({...value}), 
+                {text: text},
+                removeUndefinedKeys({...style})
+            ));
+        }
+        if (index_end == index) {
             if (index_start != index_end) {
                 var text = value.text.slice(0, charindex_end);
                 results.push(Object.assign(
@@ -140,14 +225,14 @@ export function applyStyle(start: number, end: number, style: StyledTextStyle, t
                 removeUndefinedKeys({...value}),
                 {text: value.text.slice(charindex_end, value.text.length)}
             ));
+            var lineAdded = true;
         }
-        else {
+        if (!lineAdded) {
             results.push(removeUndefinedKeys({...value}));
         }
     });
 
     results = results.map(x => StyledTextData.create(x));
-
     return shortenDataOf(results);
     
     
@@ -163,6 +248,7 @@ const StyledTextPeice: React.FC<StyledTextPeiceProps> = ({stdata, ...props}) => 
         backgroundColor: stdata.bg,
 
         textDecoration: (stdata.underline? "underline ":""),
+        fontWeight: stdata.bold?"bold":"normal",
 
         ...props.style
     };
@@ -173,8 +259,7 @@ interface StyledTextProps extends React.HTMLProps<HTMLDivElement> {
     stdataList: StyledTextData[];
 }
 const StyledText: React.FC<StyledTextProps> = ({stdataList, ...props}) => {
-
-    return <div {...props}>
+    return <div {...props} className={"w-full flex flex-row" + props.className}>
         {
             stdataList.map((data, i) => 
                 <StyledTextPeice key={"item-"+i} stdata={data} style={{

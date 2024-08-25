@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ChangeEventHandler, Component, CSSProperties, MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
+import React, { ChangeEventHandler, Component, CSSProperties, MutableRefObject, useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import "@/styles/Editor.css"
 
@@ -9,8 +9,8 @@ import Image from "next/image";
 import edit from "@/../public/assets/edit.png"
 import { useDropzone } from "react-dropzone";
 import { HandwritingRecognize, HandwritingRecognizeOptions } from "@/utils/handwriting";
-import StyledText, { StyledTextData } from "@/shared/components/StyledText";
-import { getFontHeight, getFontWidth } from "@/utils/TextUtil";
+import StyledText, { applyStyle, StyledTextData, StyledTextStyle, writeAt, writeAtRange } from "@/shared/components/StyledText";
+import { getFontWidth } from "@/utils/TextUtil";
 
 enum BlockType {
     Text, Separator, H1, H2, H3, H4, Image
@@ -19,13 +19,13 @@ enum BlockType {
 class BlockData {
     type: BlockType;
 
-    text: string; /** For writable */
+    text: StyledTextData[]; /** For writable */
     source: string; /** For media */
     children: BlockData[]; /** For innerable */
     constructor(type: BlockType) {
         this.type = type;
 
-        this.text = "";
+        this.text = [];
         this.source = "";
         this.children = [];
     }
@@ -168,25 +168,23 @@ const Block: React.FC<BlockProps> = ({
     ...props
 }) => {
     
-    const _EnableMultiline: boolean = blockData.type == BlockType.Text
+    const _EnableMultiline: boolean = blockData.type == BlockType.Text;
+
 
     
 
-    
 
 
 
 
-
-
-    var [text, setText] = useState("");
+    var [text, setText] = useState<StyledTextData[]>([]);
     var [source, setSource] = useState<string | null>(null);
     useEffect(() => {
         setText(blockData.text)
         setTimeout(fixHeight, 5)
 
         blockData.source && setSource(blockData.source)
-    }, [index, blockData])
+    }, [index, ...Object.values(blockData)])
 
 
 
@@ -227,88 +225,88 @@ const Block: React.FC<BlockProps> = ({
         var selectionEnd = textarea?.selectionEnd ?? -1;
         var firstLineEnd = source?.indexOf("\n") ?? -1;
         var lastLineStart = source?.lastIndexOf("\n") ?? -1;
-        if ((firstLineEnd  == -1 || selectionStart <= firstLineEnd) && event.key == "ArrowUp"  ) { 
-            fnSetFocus({index:index-1, selection:FocusRange.col(-1, focusData.selection.startCol), reversed: false}); 
-            event.preventDefault(); return; 
-        };
-        if ((lastLineStart == -1 || selectionEnd   > lastLineStart) && event.key == "ArrowDown") {
-            fnSetFocus({index:index+1, selection:FocusRange.col(0, focusData.selection.endCol), reversed: false});
-            event.preventDefault(); return;
-        };
-        if (source) {
-            if (selectionStart == 0 && event.key == "ArrowLeft") {
-                if (selectionStart == selectionEnd)
-                    fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1), reversed: false}); //TODO
-                else
-                    fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionStart), reversed: false});
-                event.preventDefault(); return;
-            };
-            if (selectionEnd == (textarea?.value.length ?? -1) && event.key == "ArrowRight") {
-                fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
-                event.preventDefault(); return; 
-            };
-        }
         
-        if (source && selectionStart != -1 && selectionEnd != -1 && event.key.startsWith("Arrow")) {
-            var current = FocusRange.fromSource(source, selectionStart, selectionEnd);
-            var reversed = focusData.reversed;
-            if (event.key == "ArrowLeft") {
-                if (event.shiftKey) {
-                    if (current.startCol == current.endCol) {
-                        var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
-                        current.startCol = move.startCol;
-                        current.startLine = move.startLine;
-                        reversed = true;
-                    } else if (reversed) {
-                        var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
-                        current.startCol = move.startCol;
-                        current.startLine = move.startLine;
-                    } else {
-                        var move = FocusRange.fromSource(source, Math.max(selectionEnd-1, 0), Math.max(selectionEnd-1, 0));
-                        current.endCol = move.endCol;
-                        current.endLine = move.endLine;
+        if (source && selectionStart != -1 && selectionEnd != -1) {
+            if (event.key.startsWith("Arrow")) {
+                var current = FocusRange.fromSource(source, selectionStart, selectionEnd);
+                var reversed = focusData.reversed;
+                if (event.key == "ArrowLeft") {
+                    if (selectionStart == 0) {
+                        if (selectionStart == selectionEnd)
+                            fnSetFocus({index:index-1, selection:FocusRange.col(-1, -1), reversed: false}); //TODO
+                        else
+                            fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionStart), reversed: false});
+                        event.preventDefault(); return;
+                    }
+                    else if (event.shiftKey) {
+                        if (current.startCol == current.endCol) {
+                            var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                            current.startCol = move.startCol;
+                            current.startLine = move.startLine;
+                            reversed = true;
+                        } else if (reversed) {
+                            var move = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                            current.startCol = move.startCol;
+                            current.startLine = move.startLine;
+                        } else {
+                            var move = FocusRange.fromSource(source, Math.max(selectionEnd-1, 0), Math.max(selectionEnd-1, 0));
+                            current.endCol = move.endCol;
+                            current.endLine = move.endLine;
+                        }
+                    }
+                    else {
+                        if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
+                        else                                    current = FocusRange.fromSource(source, Math.min(selectionStart, selectionEnd), Math.min(selectionStart, selectionEnd))
                     }
                 }
-                else {
-                    if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.max(selectionStart-1, 0), Math.max(selectionStart-1, 0));
-                    else                                    current = FocusRange.fromSource(source, Math.min(selectionStart, selectionEnd), Math.min(selectionStart, selectionEnd))
-                }
-            }
-            if (event.key == "ArrowRight") {
-                if (event.shiftKey) {
-                    
-                    if (current.startCol == current.endCol) {
-                        var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
-                        current.endCol = move.endCol;
-                        current.endLine = move.endLine;
-                        reversed = false;
-                    } else if (reversed) {
-                        var move = FocusRange.fromSource(source, selectionStart+1, selectionStart+1);
-                        current.startCol = move.startCol;
-                        current.startLine = move.startLine;
-                    } else {
-                        var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
-                        current.endCol = move.endCol;
-                        current.endLine = move.endLine;
+                if (event.key == "ArrowRight") {
+                    if (selectionEnd == (textarea?.value.length ?? -1)) {
+                        fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
+                        event.preventDefault(); return; 
+                    }
+                    else if (event.shiftKey) {
+                        
+                        if (current.startCol == current.endCol) {
+                            var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
+                            current.endCol = move.endCol;
+                            current.endLine = move.endLine;
+                            reversed = false;
+                        } else if (reversed) {
+                            var move = FocusRange.fromSource(source, selectionStart+1, selectionStart+1);
+                            current.startCol = move.startCol;
+                            current.startLine = move.startLine;
+                        } else {
+                            var move = FocusRange.fromSource(source, selectionEnd+1, selectionEnd+1);
+                            current.endCol = move.endCol;
+                            current.endLine = move.endLine;
+                        }
+                    }
+                    else {
+                        if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.min(selectionEnd+1, source.length), Math.min(selectionEnd+1, source.length));
+                        else                                    current = FocusRange.fromSource(source, Math.max(selectionStart, selectionEnd), Math.max(selectionStart, selectionEnd))
                     }
                 }
-                else {
-                    if (current.startCol == current.endCol) current = FocusRange.fromSource(source, Math.min(selectionEnd+1, source.length), Math.min(selectionEnd+1, source.length));
-                    else                                    current = FocusRange.fromSource(source, Math.max(selectionStart, selectionEnd), Math.max(selectionStart, selectionEnd))
+                if (event.key == "ArrowUp") {
+                    if (firstLineEnd  == -1 || selectionStart <= firstLineEnd) { 
+                        fnSetFocus({index:index-1, selection:FocusRange.col(-1, focusData.selection.startCol), reversed: false}); 
+                        event.preventDefault(); return; 
+                    };
+                    current.startLine = Math.max(current.startLine - 1, 0);
+                    current.endLine = current.startLine;
+                    current.endCol = current.startCol;
                 }
+                if (event.key == "ArrowDown") {
+                    if (lastLineStart == -1 || selectionEnd   > lastLineStart) {
+                        fnSetFocus({index:index+1, selection:FocusRange.col(0, focusData.selection.endCol), reversed: false});
+                        event.preventDefault(); return;
+                    };
+                    current.startLine = Math.min(current.startLine + 1, source.split("\n").length);
+                    current.endLine = current.startLine;
+                    current.startCol = current.endCol;
+                }
+                fnSetFocus({index:index, selection:current.copy(), reversed: reversed});
+                event.preventDefault();
             }
-            if (event.key == "ArrowUp") {
-                current.startLine = Math.max(current.startLine - 1, 0);
-                current.endLine = current.startLine;
-                current.endCol = current.startCol;
-            }
-            if (event.key == "ArrowDown") {
-                current.startLine = Math.min(current.startLine + 1, source.split("\n").length);
-                current.endLine = current.startLine;
-                current.startCol = current.endCol;
-            }
-            fnSetFocus({index:index, selection:current.copy(), reversed: reversed});
-            event.preventDefault();
         }
     }
     function onMouseUp(event: React.MouseEvent<HTMLTextAreaElement>) {
@@ -320,42 +318,44 @@ const Block: React.FC<BlockProps> = ({
         if (source && (direction != null)) 
             fnSetFocus({index:index, selection:FocusRange.fromSource(source, selectionStart, selectionEnd), reversed: direction});
     }
-    function executeText(text: string) {
+    function executeText(text: StyledTextData[]) {
         blockData.text = text
         setText(blockData.text)
-        if (text == "/sep" || text == "---") {
+
+        var rawText = text.map(data => data.text).join("");
+        if (rawText == "/sep" || rawText == "---") {
             blockData.type = BlockType.Separator
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             fnSetFocus({index:index+1, selection:FocusRange.zero(), reversed: false});
-        } else if (text == "/h1" || text == "# ") {
+        } else if (rawText == "/h1" || rawText == "# ") {
             blockData.type = BlockType.H1
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
-        } else if (text == "/h2" || text == "## ") {
+        } else if (rawText == "/h2" || rawText == "## ") {
             blockData.type = BlockType.H2
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
-        } else if (text == "/h3" || text == "### ") {
+        } else if (rawText == "/h3" || rawText == "### ") {
             blockData.type = BlockType.H3
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
-        } else if (text == "/h4" || text == "#### ") {
+        } else if (rawText == "/h4" || rawText == "#### ") {
             blockData.type = BlockType.H4
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             fnSetFocus({index:index, selection:FocusRange.zero(), reversed: false});
             fixHeight();
-        } else if (text == "/image") {
+        } else if (rawText == "/image") {
             blockData.type = BlockType.Image
-            blockData.text = "";
-            setText("");
+            blockData.text = [];
+            setText([]);
             setTimeout(fixHeight, 100);
             setMediaSelectorMode("image");
             mediaSelectorCallback.current = url => {
@@ -364,7 +364,50 @@ const Block: React.FC<BlockProps> = ({
             }
         }
     }
-    var onChange: ChangeEventHandler<HTMLTextAreaElement> = useCallback(event => executeText(event.target.value), [index, blockData]);
+
+    var onChange: ChangeEventHandler<HTMLTextAreaElement> = useCallback(event => {
+        
+        if (text.length == 0) {
+            executeText([StyledTextData.create({text:event.target.value})]);
+            return;
+        }
+
+        var textarea = event.target;
+
+
+        var rawText = text.map(value => value.text).join("");
+        var source = textarea.value;
+        var write_start = 0;
+        var write_end = source.length;
+        while (true) {
+            if (source[write_start] == rawText[write_start]) {
+                write_start ++
+            }
+            else if (source[write_end-1] == rawText[write_end-1+rawText.length-source.length]) {
+                write_end--
+            }
+            else {
+                break
+            }
+        }
+
+        var written_start = 0;
+        var written_end = rawText.length;
+        while (true) {
+            if (source[written_start] == rawText[written_start]) {
+                written_start ++
+            }
+            else if (source[written_end-1+source.length-rawText.length] == rawText[written_end-1]) {
+                written_end--
+            }
+            else {
+                break
+            }
+        }
+
+        var newText = writeAtRange(text, written_start, written_end, source.slice(write_start, write_end));
+        executeText(newText);
+    }, [index, text, blockData]);
     return <div id={`block-${docid}-${index}`} {...props} className="relative" onKeyDown={onKeyDown}>
         {
         blockData.type == BlockType.Separator? <hr className="mt-[4px] mb-[3px] border-y-2" />
@@ -391,9 +434,23 @@ const Block: React.FC<BlockProps> = ({
                 }
                 style={{width:"100%", border:0}}//, color:"transparent"}}
 
-                value={text} onChange={onChange} placeholder={"Write down something surprising!"}
+                value={text.map(data => data.text).join("")} onChange={onChange} 
+                onKeyDown={event => {
+                    //TODO write here a function to edit text
+                    //event.key is what to write
+                    //check if ctrl+v
+                    //if ctrl+c or ctrl+x then just not preventDefault() so that the browser auto-handle it.
+                    //write the comment!!!
+
+                    //TODO e.key == Process when korean is input, so you must handle this on onChange (use writeAt)
+                }}
+                placeholder={"Write down something surprising!"}
                 onInput={fixHeight} />
-                <StyledText stdataList={[new StyledTextData(text,"red") ]}/>
+                <StyledText className={(blockData.type == BlockType.Text? " block h-[30px]" : "")
+                    + (blockData.type == BlockType.H1?   " block h-[1.34em] text-[2em] mr-0 ml-0 font-bold" : "") // mt-[0.67em] mb-[0.67em]
+                    + (blockData.type == BlockType.H2?   " block h-[1.66em] text-[1.5em] mr-0 ml-0 font-bold" : "") // mt-[0.83em] mb-[0.83em]
+                    + (blockData.type == BlockType.H3?   " block h-[2em] text-[1.17em] mr-0 ml-0 font-bold" : "") // mt-[0.83em] mb-[0.83em]
+                    + (blockData.type == BlockType.H4?   " block mr-0 ml-0 font-bold" : "")} stdataList={text}/>
         </>
         }
     </div>
@@ -605,6 +662,9 @@ class Canvas extends Component<CanvasProps, CanvasState> {
 }
 
 export default function Editor({className, style}: {className?: string | undefined, style?: CSSProperties | undefined}) {
+
+
+
     var documentData = new Document("testdoc", "haru");
 
     // Modal Area
@@ -619,11 +679,13 @@ export default function Editor({className, style}: {className?: string | undefin
     const mediaSelectorDropzone = useDropzone({ maxFiles: 1, onDrop: onDrop, noKeyboard: true })
 
     // Sidebar Area
+
+    var [editmode, setEditMode] = useState<"none" | "text" | "draw" | "handwrite">("text");
+
     var [sidebarNumber, setSidebarNumber] = useState(0);
 
     
     var handwriteTimeout = useRef<NodeJS.Timeout | null>(null);
-    var [handwriteMode, setHandwriteMode] = useState(false);
     var handwriteItems = useRef<DrawingPeice[]>([]);
     var [handwriteResult, setHandwriteResults] = useState<string[]>([]);
 
@@ -641,13 +703,15 @@ export default function Editor({className, style}: {className?: string | undefin
     
     // Editor Area
     var [docmuentBlocks, setDocumentBlocks] = useState(documentData.blocks);
-    useEffect(() => { documentData.blocks = docmuentBlocks }, [docmuentBlocks]);
     var [docmuentFocus, setDocumentFocus] = useState(documentData.focus);
-    useEffect(() => { documentData.focus = docmuentFocus }, [docmuentFocus]);
     var [docmuentSpell, setDocumentSpell] = useState(documentData.spell);
-    useEffect(() => { documentData.spell = docmuentSpell }, [docmuentSpell]);
     var [docmuentGrid, setDocumentGrid] = useState(documentData.grid);
-    useEffect(() => { documentData.grid = docmuentGrid }, [docmuentGrid]);
+    useEffect(() => {
+        documentData.blocks = docmuentBlocks;
+        documentData.focus = docmuentFocus;
+        documentData.spell = docmuentSpell;
+        documentData.grid = docmuentGrid;
+    }, [docmuentBlocks, docmuentFocus, docmuentSpell, docmuentGrid])
 
 
 
@@ -764,14 +828,14 @@ export default function Editor({className, style}: {className?: string | undefin
                 <div className={"w-full h-full" + (sidebarNumber==1?"":" hidden")}>
                     <div className="flex flex-row">
                         <button id={`button-handwrite-${documentData.id}`}
-                                className="disabled:text-gray-500" disabled={handwriteMode} 
+                                className="disabled:text-gray-500" disabled={editmode == "handwrite"} 
                                 onClick={() => {
                                     var firstItem = handwriteResult.at(0);
                                     if (firstItem) {
                                         window.navigator.clipboard.writeText(firstItem);
                                         setHandwriteResults([]);
                                     } else {
-                                        setHandwriteMode(true);
+                                        setEditMode("handwrite")
                                         setDrawingMode(0);
                                     }
                                 }}>
@@ -781,15 +845,15 @@ export default function Editor({className, style}: {className?: string | undefin
 
                     <div className="flex flex-row">
                         <div className="flex flex-col cursor-pointer items-center">
-                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==1 ? 0 : 1); setHandwriteMode(false);}}/>
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==1?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==1 ? 0 : 1); setEditMode("draw");}}/>
                             <input id={`input-pencolor1-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor1} onChange={e => setDrawingColor1(e.target.value)} />
                         </div>
                         <div className="flex flex-col cursor-pointer items-center">
-                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==2?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==2 ? 0 : 2); setHandwriteMode(false);}}/>
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==2?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==2 ? 0 : 2); setEditMode("draw");}}/>
                             <input id={`input-pencolor2-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor2} onChange={e => setDrawingColor2(e.target.value)} />
                         </div>
                         <div className="flex flex-col cursor-pointer items-center">
-                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==3?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==3 ? 0 : 3); setHandwriteMode(false);}}/>
+                            <Image className={"h-8 w-8 rounded-lg" + (drawingMode==3?" bg-slate-200":"")} src={pen} alt="" onClick={() => {setDrawingMode(drawingMode==3 ? 0 : 3); setEditMode("draw");}}/>
                             <input id={`input-pencolor3-${documentData.id}`} className="h-4 w-10" type="color" value={drawingColor3} onChange={e => setDrawingColor3(e.target.value)} />
                         </div>
                     </div>
@@ -822,8 +886,8 @@ export default function Editor({className, style}: {className?: string | undefin
                 }}
             >
                 
-                <Canvas id={"canvas-handwrite-"+documentData.id} className={"absolute left-0 top-0 w-full h-full z-[100]"+(handwriteMode?"  bg-[#222222aa]":"")}
-                        drawingMode={handwriteMode} drawingColor={"white"} drawingItems={handwriteItems} 
+                <Canvas id={"canvas-handwrite-"+documentData.id} className={"absolute left-0 top-0 w-full h-full z-[100]"+((editmode=="handwrite")?"  bg-[#222222aa]":"")}
+                        drawingMode={(editmode=="handwrite")} drawingColor={"white"} drawingItems={handwriteItems} 
                         onDrawStart={ () => { handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current); handwriteTimeout.current = null; }}
                         onDrawEnd={ () => {
                             function HandwriteRefresh(endWriting: boolean = true) {
@@ -847,7 +911,7 @@ export default function Editor({className, style}: {className?: string | undefin
                                 }, console.error);
 
                                 if (endWriting){
-                                    setHandwriteMode(false);
+                                    setEditMode("text");
                                     handwriteItems.current = []
                                     var canvas = Array.from(document.getElementsByTagName("canvas")).filter(element => element.id == "canvas-handwrite-"+documentData.id).at(0)
                                     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
@@ -858,7 +922,7 @@ export default function Editor({className, style}: {className?: string | undefin
                             handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current);
                             handwriteTimeout.current = setTimeout(HandwriteRefresh, 2000)
                         }} />
-                <p className={"absolute left-0 top-0 z-[110] text-white"+(handwriteMode?"":" hidden")}>Write down something...</p>
+                <p className={"absolute left-0 top-0 z-[110] text-white"+((editmode=="handwrite")?"":" hidden")}>Write down something...</p>
 
                     
 
@@ -871,7 +935,28 @@ export default function Editor({className, style}: {className?: string | undefin
                         className={"fixed text-gray-400 bg-white border-2 rounded-lg z-[100] w-36 h-8 flex flex-row items-center"}
                         style={{left:0, top:0, visibility:shortToolbarMode?"visible":"hidden"}}
                     >
-                        <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600">A</button>
+                        <button className="w-24 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600" onClick={
+                            () => {
+                                var block = docmuentBlocks[docmuentFocus.index]
+                                var text = block.text;
+                                var rawText = text.map(value => value.text).join("");
+                                var selection = docmuentFocus.selection.toRawCol(rawText);
+                                text = applyStyle(selection.start, selection.end, StyledTextStyle.create({fg:'#'+(Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0')}), text);
+                                block.text = text;
+                                setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false });
+                            }
+                        }>randomColor</button>
+                        <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600 font-bold" onClick={
+                            () => {
+                                var block = docmuentBlocks[docmuentFocus.index]
+                                var text = block.text;
+                                var rawText = text.map(value => value.text).join("");
+                                var selection = docmuentFocus.selection.toRawCol(rawText);
+                                text = applyStyle(selection.start, selection.end, StyledTextStyle.create({bold: true}), text);
+                                block.text = text;
+                                setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false }); 
+                            }
+                        }>A</button>
                     </div>
                     <Canvas id={"canvas-draw-"+documentData.id} className="absolute top-0 w-full h-full" drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/> 
                     
@@ -926,7 +1011,10 @@ export default function Editor({className, style}: {className?: string | undefin
                 </div>
                 
                 <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap ml-5">
-                    M1-M2-M3-M4
+                    <button className="w-8 h-8    font-bold" children={"none"}/>
+                    <button className="w-8 h-8    underline font-bold decoration-2" onClick={() => setEditMode("text")} children={"T"}/>
+                    <button className="w-8 h-8    underline font-bold decoration-2" children={"T"}/>
+                    <button className="w-8 h-8    underline font-bold decoration-2" children={"T"}/>
                 </div>
             </div>
         </div>
