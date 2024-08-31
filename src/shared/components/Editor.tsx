@@ -5,6 +5,10 @@ import React, { ChangeEventHandler, Component, CSSProperties, MutableRefObject, 
 import "@/styles/Editor.css"
 
 import pen from "@/../public/assets/pen.png";
+import quillpen from "@/../public/assets/quill-pen.png";
+import code from "@/../public/assets/code.png";
+import pallete from "@/../public/assets/pallete.png";
+import textImage from "@/../public/assets/text.png";
 import Image from "next/image";
 import edit from "@/../public/assets/edit.png"
 import { useDropzone } from "react-dropzone";
@@ -680,11 +684,12 @@ export default function Editor({className, style}: {className?: string | undefin
 
     // Sidebar Area
 
-    var [editmode, setEditMode] = useState<"none" | "text" | "draw" | "handwrite">("text");
+    var [editMode, setEditMode] = useState<"text" | "draw" | "handwrite" | "command">("text");
 
     var [sidebarNumber, setSidebarNumber] = useState(0);
 
-    
+
+    var [handwriteMode, setHandwriteMode] = useState(false);
     var handwriteTimeout = useRef<NodeJS.Timeout | null>(null);
     var handwriteItems = useRef<DrawingPeice[]>([]);
     var [handwriteResult, setHandwriteResults] = useState<string[]>([]);
@@ -826,7 +831,7 @@ export default function Editor({className, style}: {className?: string | undefin
             </div>
             <div className="w-[200px] h-full bg-[#E5E5E5] border-b-2 border-r-2 border-[#A0A0A0]" style={{display:(sidebarNumber!=0?"block":"none")}}>
                 <div className={"w-full h-full" + (sidebarNumber==1?"":" hidden")}>
-                    <div className="flex flex-row">
+                    {/* <div className="flex flex-row">
                         <button id={`button-handwrite-${documentData.id}`}
                                 className="disabled:text-gray-500" disabled={editmode == "handwrite"} 
                                 onClick={() => {
@@ -841,7 +846,7 @@ export default function Editor({className, style}: {className?: string | undefin
                                 }}>
                         {handwriteResult.length > 0? `Copy '${handwriteResult.at(0)}'`:"Click to handwrite"}</button>
                         <button className="hover:text-red-500 active:text-white active:bg-red-500 rounded-md w-5 h-5" style={{visibility:handwriteResult.length>0?"visible":"collapse"}} onClick={() => setHandwriteResults([])}>X</button>
-                    </div>
+                    </div> */}
 
                     <div className="flex flex-row">
                         <div className="flex flex-col cursor-pointer items-center">
@@ -869,152 +874,174 @@ export default function Editor({className, style}: {className?: string | undefin
                     </div>
                 </div>
             </div>
-            <div className="flex flex-col flex-auto items-center grow relative overflow-y-auto overflow-x-hidden bg-slate-100 bluescroll"
-                // For dragdrop system
-                style={isDraggingBlock ? { cursor:"pointer" } : {}}
-                onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
-                onMouseMove={event => {
-                    var docview = document.getElementById("documentview-"+documentData.id);
-                    var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
-                    if (docview == null || draggingBlock == null) return;
-                    draggingBlock.style.left = `${event.clientX + 8}px`;
-                    draggingBlock.style.top = event.clientY + "px"; // Plus 8 cause mr-2
+            <div className="grow flex flex-col relative">
+                <div className="flex flex-col flex-auto items-center grow relative overflow-y-auto overflow-x-hidden bg-slate-100 bluescroll"
+                    // For dragdrop system
+                    style={isDraggingBlock ? { cursor:"pointer" } : {}}
+                    onMouseUp={() => {setDraggingBlock(-1); setIsDraggingBlock(false)}}
+                    onMouseMove={event => {
+                        var docview = document.getElementById("documentview-"+documentData.id);
+                        var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                        if (docview == null || draggingBlock == null) return;
+                        draggingBlock.style.left = `${event.clientX + 8}px`;
+                        draggingBlock.style.top = event.clientY + "px"; // Plus 8 cause mr-2
+                        
+                        var blocks = Array.from(docview.getElementsByTagName("div")).filter(element => element.id.startsWith(`block-${documentData.id}`))
+                        // console.log(blocks)
+                        // TODO
+                    }}
+                >
                     
-                    var blocks = Array.from(docview.getElementsByTagName("div")).filter(element => element.id.startsWith(`block-${documentData.id}`))
-                    // console.log(blocks)
-                    // TODO
-                }}
-            >
-                
-                <Canvas id={"canvas-handwrite-"+documentData.id} className={"absolute left-0 top-0 w-full h-full z-[100]"+((editmode=="handwrite")?"  bg-[#222222aa]":"")}
-                        drawingMode={(editmode=="handwrite")} drawingColor={"white"} drawingItems={handwriteItems} 
-                        onDrawStart={ () => { handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current); handwriteTimeout.current = null; }}
-                        onDrawEnd={ () => {
-                            function HandwriteRefresh(endWriting: boolean = true) {
+                    <Canvas id={"canvas-handwrite-"+documentData.id} className={"absolute left-0 top-0 w-full h-full z-[100]"+(handwriteMode?"  bg-[#222222aa]":"")}
+                            drawingMode={handwriteMode} drawingColor={"white"} drawingItems={handwriteItems} 
+                            onDrawStart={ () => { handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current); handwriteTimeout.current = null; }}
+                            onDrawEnd={ () => {
+                                function HandwriteRefresh(endWriting: boolean = true) {
 
-                                var trace: number[][][] = handwriteItems.current.map(peice => {
-                                    var X = peice.segments.map(segment => segment.x)
-                                    var Y = peice.segments.map(segment => segment.y)
-                                    return [X, Y];
-                                });
-                                
-                                var options: HandwritingRecognizeOptions = {
-                                    width: 1,
-                                    height: 1,
-                                    language: "ko",
-                                    numOfWords: undefined,
-                                    numOfReturn: 5
+                                    var trace: number[][][] = handwriteItems.current.map(peice => {
+                                        var X = peice.segments.map(segment => segment.x)
+                                        var Y = peice.segments.map(segment => segment.y)
+                                        return [X, Y];
+                                    });
+                                    
+                                    var options: HandwritingRecognizeOptions = {
+                                        width: 1,
+                                        height: 1,
+                                        language: "ko",
+                                        numOfWords: undefined,
+                                        numOfReturn: 5
+                                    }
+                                    HandwritingRecognize(trace, options, results => {
+
+                                        setHandwriteResults(results);
+                                    }, console.error);
+
+                                    if (endWriting){
+                                        setHandwriteMode(false);
+                                        handwriteItems.current = []
+                                        var canvas = Array.from(document.getElementsByTagName("canvas")).filter(element => element.id == "canvas-handwrite-"+documentData.id).at(0)
+                                        canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+                                    }
                                 }
-                                HandwritingRecognize(trace, options, results => {
 
-                                    setHandwriteResults(results);
-                                }, console.error);
+                                HandwriteRefresh(false);
+                                handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current);
+                                handwriteTimeout.current = setTimeout(HandwriteRefresh, 2000);
+                            }} />
+                    <p className={"absolute left-0 top-0 z-[110] text-white"+(handwriteMode?"":" hidden")}>Write down something...</p>
 
-                                if (endWriting){
-                                    setEditMode("text");
-                                    handwriteItems.current = []
-                                    var canvas = Array.from(document.getElementsByTagName("canvas")).filter(element => element.id == "canvas-handwrite-"+documentData.id).at(0)
-                                    canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+                        
+
+                    <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow pb-[72px]" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
+                        <div id={"draggingblock-"+documentData.id}
+                            className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
+                            style={{left:0, top:0}}
+                        />
+                        <div id={"shorttoolbar-"+documentData.id}
+                            className={"fixed text-gray-400 bg-white border-2 rounded-lg z-[100] w-36 h-8 flex flex-row items-center"}
+                            style={{left:0, top:0, visibility:(editMode=="text")&&shortToolbarMode?"visible":"hidden"}}
+                        >
+                            <button className="w-24 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600" onClick={
+                                () => {
+                                    var block = docmuentBlocks[docmuentFocus.index]
+                                    var text = block.text;
+                                    var rawText = text.map(value => value.text).join("");
+                                    var selection = docmuentFocus.selection.toRawCol(rawText);
+                                    text = applyStyle(selection.start, selection.end, StyledTextStyle.create({fg:'#'+(Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0')}), text);
+                                    block.text = text;
+                                    setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false });
                                 }
-                            }
+                            }>randomColor</button>
+                            <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600 font-bold" onClick={
+                                () => {
+                                    var block = docmuentBlocks[docmuentFocus.index]
+                                    var text = block.text;
+                                    var rawText = text.map(value => value.text).join("");
+                                    var selection = docmuentFocus.selection.toRawCol(rawText);
+                                    text = applyStyle(selection.start, selection.end, StyledTextStyle.create({bold: true}), text);
+                                    block.text = text;
+                                    setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false }); 
+                                }
+                            }>A</button>
+                        </div>
+                        <Canvas id={"canvas-draw-"+documentData.id} className="absolute top-0 w-full h-full" drawingMode={(editMode == "draw") && (drawingMode != 0)} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/> 
+                        
+                        {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
+                        {docmuentBlocks.map((block, index) => (
+                                            <div key={"blockholder-"+documentData.id+"-"+index}>
+                                                <div key={"blocksidetool-"+documentData.id+"-"+index} className={"absolute right-full float-left flex items-start"+(!isDraggingBlock && (targettingBlock==index || targettingBlock==index+0.5)?"":" hidden")}
+                                                    onMouseEnter={() => setTargettingBlock(index+0.5)}
+                                                    onMouseLeave={() => (targettingBlock==index+0.5) && setTargettingBlock(-1)}>
+                                                    <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                            onClick={() => {
+                                                                setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
+                                                                setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero(), reversed: false});
+                                                            }}
+                                                    >+</button>
+                                                    <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
+                                                            onMouseDown={() => {
+                                                                var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
+                                                                if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
+                                                                setDraggingBlock(index);
+                                                            }}
+                                                            onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
+                                                    >::</button>
+                                                </div>
+                                                <Block
+                                                    key={"block-"+documentData.id+"-"+index}
 
-                            HandwriteRefresh(false);
-                            handwriteTimeout.current != null && clearTimeout(handwriteTimeout.current);
-                            handwriteTimeout.current = setTimeout(HandwriteRefresh, 2000)
-                        }} />
-                <p className={"absolute left-0 top-0 z-[110] text-white"+((editmode=="handwrite")?"":" hidden")}>Write down something...</p>
+                                                    className={"m-0 bg-transparent"+(drawingMode?" select-none":"")}
+                                                    spellCheck={docmuentSpell}
 
-                    
+                                                    onMouseEnter={() => setTargettingBlock(index)}
+                                                    onMouseLeave={() => targettingBlock==index && setTargettingBlock(-1)}
 
-                <div id={"documentview-"+documentData.id} className={"relative flex flex-col bg-white grow pb-[72px]" + (docmuentGrid? " editor-grid":"")} style={{width:"70%"}}>
-                    <div id={"draggingblock-"+documentData.id}
-                        className={"fixed text-gray-400"+(isDraggingBlock?"":" hidden")}
-                        style={{left:0, top:0}}
-                    />
-                    <div id={"shorttoolbar-"+documentData.id}
-                        className={"fixed text-gray-400 bg-white border-2 rounded-lg z-[100] w-36 h-8 flex flex-row items-center"}
-                        style={{left:0, top:0, visibility:shortToolbarMode?"visible":"hidden"}}
-                    >
-                        <button className="w-24 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600" onClick={
-                            () => {
-                                var block = docmuentBlocks[docmuentFocus.index]
-                                var text = block.text;
-                                var rawText = text.map(value => value.text).join("");
-                                var selection = docmuentFocus.selection.toRawCol(rawText);
-                                text = applyStyle(selection.start, selection.end, StyledTextStyle.create({fg:'#'+(Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0')}), text);
-                                block.text = text;
-                                setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false });
-                            }
-                        }>randomColor</button>
-                        <button className="w-6 h-6 border-2 rounded-lg text-black hover:bg-slate-400 active:bg-slate-600 font-bold" onClick={
-                            () => {
-                                var block = docmuentBlocks[docmuentFocus.index]
-                                var text = block.text;
-                                var rawText = text.map(value => value.text).join("");
-                                var selection = docmuentFocus.selection.toRawCol(rawText);
-                                text = applyStyle(selection.start, selection.end, StyledTextStyle.create({bold: true}), text);
-                                block.text = text;
-                                setDocumentFocus({ index: docmuentFocus.index, selection: docmuentFocus.selection, reversed: false }); 
-                            }
-                        }>A</button>
-                    </div>
-                    <Canvas id={"canvas-draw-"+documentData.id} className="absolute top-0 w-full h-full" drawingMode={drawingMode != 0} drawingColor={drawingMode==3?drawingColor3:drawingMode==2?drawingColor2:drawingColor1} drawingItems={drawingItems} onDrawEnd={ () => documentData.draw.items = drawingItems.current }/> 
-                    
-                    {/* <hr key={"blockplace-"+documentData.id+"-0"} id={"blockplace-"+documentData.id+"-0"} className="border-y-2 border-cyan-400" style={(isDraggingBlock && draggingStick)?{}:{display : "none"}}></hr> */}
-                    {docmuentBlocks.map((block, index) => (
-                                        <div key={"blockholder-"+documentData.id+"-"+index}>
-                                            <div key={"blocksidetool-"+documentData.id+"-"+index} className={"absolute right-full float-left flex items-start"+(!isDraggingBlock && (targettingBlock==index || targettingBlock==index+0.5)?"":" hidden")}
-                                                onMouseEnter={() => setTargettingBlock(index+0.5)}
-                                                onMouseLeave={() => (targettingBlock==index+0.5) && setTargettingBlock(-1)}>
-                                                <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
-                                                        onClick={() => {
-                                                            setDocumentBlocks([...docmuentBlocks,new BlockData(BlockType.Text)]);
-                                                            setDocumentFocus({index: docmuentBlocks.length, selection:FocusRange.zero(), reversed: false});
-                                                        }}
-                                                >+</button>
-                                                <button className="font-bold select-none px-1 rounded-l text-gray-400 hover:bg-gray-200 active:bg-gray-300"
-                                                        onMouseDown={() => {
-                                                            var draggingBlock = document.getElementById("draggingblock-"+documentData.id);
-                                                            if (draggingBlock) draggingBlock.innerHTML = document.getElementById("block-"+documentData.id+"-"+index)?.innerHTML ?? "";
-                                                            setDraggingBlock(index);
-                                                        }}
-                                                        onMouseLeave={() => setIsDraggingBlock(isDraggingBlock || (draggingBlock != -1))}
-                                                >::</button>
+                                                    docid={documentData.id}
+                                                    index={index}
+                                                    blockData={block}
+                                                    focusData={docmuentFocus}
+                                                    fnAddBlock={fnAddBlock}
+                                                    fnSetFocus={setDocumentFocus}
+
+                                                    setMediaSelectorMode={setMediaSelectorMode}
+                                                    mediaSelectorCallback={mediaSelectorCallback}
+                                                />
                                             </div>
-                                            <Block
-                                                key={"block-"+documentData.id+"-"+index}
-
-                                                className={"m-0 bg-transparent"+(drawingMode?" select-none":"")}
-                                                spellCheck={docmuentSpell}
-
-                                                onMouseEnter={() => setTargettingBlock(index)}
-                                                onMouseLeave={() => targettingBlock==index && setTargettingBlock(-1)}
-
-                                                docid={documentData.id}
-                                                index={index}
-                                                blockData={block}
-                                                focusData={docmuentFocus}
-                                                fnAddBlock={fnAddBlock}
-                                                fnSetFocus={setDocumentFocus}
-
-                                                setMediaSelectorMode={setMediaSelectorMode}
-                                                mediaSelectorCallback={mediaSelectorCallback}
-                                            />
-                                        </div>
-                                ))}
+                                    ))}
+                    </div>
                 </div>
-            </div>
-            
-            <div className="absolute bottom-0 w-full flex justify-center">
-                <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap">
-                    Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 ...
-                </div>
-                
-                <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap ml-5">
-                    <button className="w-8 h-8    font-bold" children={"none"}/>
-                    <button className="w-8 h-8    underline font-bold decoration-2" onClick={() => setEditMode("text")} children={"T"}/>
-                    <button className="w-8 h-8    underline font-bold decoration-2" children={"T"}/>
-                    <button className="w-8 h-8    underline font-bold decoration-2" children={"T"}/>
+                <div className="absolute bottom-0 flex justify-center w-full">
+                    <div className="w-[70%] flex justify-center px-4">
+                        <div style={{boxShadow: "0 0 10px 2px #000", transition:"width 2s"}} className="z-[1] h-[48px] grow border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap">
+                            <div style={{display:(editMode=="text")?"block":"none"}}>Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 Fn1 Fn2 Fn3 Fn4 ...</div>
+                            <div style={{display:(editMode=="handwrite")?"block":"none"}} className="flex flex-row">
+                                <span>Click to copy: </span>
+                                {
+                                    [...Array(5)].map((_, i) => {
+                                        var item = handwriteResult.at(i);
+                                        return <button id={`button-handwriteres-${i}-${documentData.id}`}
+                                                className="disabled:text-gray-500 bg-[#8bc5ff] rounded-md"
+                                                onClick={() => {
+                                                    if (item) {
+                                                        window.navigator.clipboard.writeText(item);
+                                                        setHandwriteResults([]);
+                                                    }
+                                                }}>
+                                            {item ?? "──"}
+                                        </button>
+                                    })
+                                }
+                                <button onClick={() => setHandwriteMode(true)}>Write</button>
+                            </div>
+                        </div>
+                        
+                        <div style={{boxShadow: "0 0 10px 2px #000"}} className="z-[1] h-[48px] w-min border-4 mb-[12px] px-2 bg-[#e5e5e5] rounded-[10px] flex items-center justify-center whitespace-nowrap ml-5">
+                            <button className="w-8 h-8" onClick={() => setEditMode("text")}      children={<Image src={textImage} style={(editMode == "text")?      {filter: "opacity(0.4) drop-shadow(0 0 0 #2f93f7)"}:{}} alt=""/>}/>
+                            <button className="w-8 h-8" onClick={() => setEditMode("draw")}      children={<Image src={pallete}   style={(editMode == "draw")?      {filter: "opacity(0.4) drop-shadow(0 0 0 #2f93f7)"}:{}} alt=""/>}/>
+                            <button className="w-8 h-8" onClick={() => setEditMode("handwrite")} children={<Image src={quillpen}  style={(editMode == "handwrite")? {filter: "opacity(0.4) drop-shadow(0 0 0 #2f93f7)"}:{}} alt=""/>}/>
+                            <button className="w-8 h-8" onClick={() => setEditMode("command")}   children={<Image src={code}    style={(editMode == "command")?   {filter: "opacity(0.4) drop-shadow(0 0 0 #2f93f7)"}:{}} alt=""/>}/>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
